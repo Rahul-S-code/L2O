@@ -1,0 +1,18 @@
+# Render blueprint: one web service with a small persistent disk for uploaded Excel files and saved quotes.
+services:
+  - type: web
+    name: uc-order-hub
+    runtime: docker
+    plan: starter            # a persistent disk needs a paid instance
+    healthCheckPath: /healthz
+    disk:
+      name: uc-order-hub-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: ADMIN_USERS     # e.g. rahul:a-long-password,second-admin:another-password
+        sync: false
+      - key: VIEWER_PASSWORD # optional team password for everyone else; leave empty to keep the site open
+        sync: false

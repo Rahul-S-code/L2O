@@ -1,0 +1,1441 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>UC Order Flow</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: left rail shows the whole lead-to-order journey; right pane is the live step-1 prototype. */
+:root{
+  --bg:#f5f7f9; --surface:#ffffff; --fg:#14202b; --muted:#5b6b78; --line:#dbe2e8;
+  --accent:#0b6e8a; --accent-soft:#e3f1f5; --done:#2f7d4f; --warn:#b26a00; --todo:#9aa7b2;
+  --display:"Sora",system-ui,sans-serif; --body:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f161c; --surface:#16212a; --fg:#e4ebf0; --muted:#93a3b0; --line:#2a3743;
+  --accent:#4fb6d3; --accent-soft:#17323d; --done:#5dbb83; --warn:#e3a33b; --todo:#5f6e7a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f161c; --surface:#16212a; --fg:#e4ebf0; --muted:#93a3b0; --line:#2a3743;
+  --accent:#4fb6d3; --accent-soft:#17323d; --done:#5dbb83; --warn:#e3a33b; --todo:#5f6e7a; color-scheme:dark}
+*{box-sizing:border-box} [hidden]{display:none!important}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.5;padding:24px 16px}
+.wrap{max-width:1120px;margin:0 auto;display:grid;grid-template-columns:280px 1fr;gap:28px}
+@media (max-width:820px){.wrap{grid-template-columns:1fr}}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+/* journey rail */
+.rail h2{font-size:16px;margin:6px 0 14px}
+.rail ol{list-style:none;margin:0;padding:0;display:grid;gap:2px}
+.rail li{display:grid;grid-template-columns:26px 1fr;gap:10px;padding:10px 8px;border-radius:8px}
+.rail li.now{background:var(--accent-soft)}
+.dot{width:24px;height:24px;border-radius:50%;border:2px solid var(--todo);display:grid;place-items:center;font-family:var(--mono);font-size:11px;color:var(--muted)}
+.now .dot{border-color:var(--accent);color:var(--accent);font-weight:600}
+.rail strong{display:block;font-size:14px}
+.rail span.d{font-size:12.5px;color:var(--muted)}
+.note{margin-top:16px;font-size:12.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:12px}
+/* app pane */
+.app{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:28px;min-width:0}
+@media (max-width:500px){.app{padding:18px}}
+.hero h1{font-size:clamp(24px,3.4vw,32px);margin:6px 0 8px}
+.hero p{color:var(--muted);max-width:60ch;margin:0}
+.section{margin-top:28px}
+.section h3{font-size:15px;margin-bottom:12px}
+.vendors{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+.vendor{all:unset;cursor:pointer;border:1.5px solid var(--line);border-radius:10px;padding:16px;display:grid;gap:4px;background:var(--surface)}
+.vendor:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.vendor:hover{border-color:var(--accent)}
+.vendor[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.vendor b{font-family:var(--display);font-size:15px}
+.vendor small{color:var(--muted);font-size:12.5px}
+.search{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);font:inherit;margin-bottom:12px}
+.search:focus-visible{outline:2px solid var(--accent)}
+.countries{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;max-height:300px;overflow:auto;padding:2px}
+.country{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:8px;padding:9px 12px;cursor:pointer;font-size:14px}
+.country:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+.country input{accent-color:var(--accent)}
+.country code{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--muted)}
+.country.na{opacity:.45;cursor:not-allowed}
+.sample{display:inline-block;font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:99px;background:var(--accent-soft);color:var(--accent);margin-left:8px;vertical-align:middle}
+.bar{margin-top:24px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;border-top:1px solid var(--line);padding-top:18px}
+.summary{font-size:13.5px;color:var(--muted)}
+.btn{all:unset;cursor:pointer;background:var(--accent);color:var(--surface);font-weight:600;padding:10px 18px;border-radius:8px}
+.btn[aria-disabled="true"]{opacity:.4;cursor:not-allowed}
+.btn:focus-visible{outline:2px solid var(--fg);outline-offset:2px}
+.msg{margin-top:12px;font-size:13.5px;color:var(--done)}
+.top{max-width:1120px;margin:0 auto 22px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.brand{font-family:var(--display);font-weight:700;font-size:17px;color:var(--fg);text-decoration:none}
+.crumb{font-size:13.5px;color:var(--muted)} .crumb a{color:var(--accent)}
+.home{max-width:1120px;margin:0 auto}
+.home .hero h1{font-size:clamp(26px,3.8vw,36px)}
+.tiles{margin-top:26px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:22px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.tile.primary{border:1.5px solid var(--accent)}
+.tile h2{font-size:18px}
+.tile p{margin:0;color:var(--muted);font-size:14px}
+.tile ul{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:2px;border-top:1px solid var(--line);padding-top:10px}
+.tile li a{display:flex;justify-content:space-between;gap:8px;padding:7px 0;color:var(--fg);text-decoration:none;font-size:14px}
+.tile li a:hover,.tile li a:focus-visible{color:var(--accent)}
+.tile li a::after{content:"\2192";color:var(--muted)}
+.tile .cta{margin-top:auto;align-self:flex-start;text-decoration:none}
+.ph{max-width:820px;margin:0 auto;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:28px}
+.ph h1{font-size:26px;margin:6px 0 10px}
+.ph p{color:var(--muted);max-width:60ch}
+.ph .todo{border:1px dashed var(--line);border-radius:10px;padding:16px;margin-top:16px;font-size:14px;color:var(--muted)}
+.ph .sibs{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}
+.ph .sibs a{font-size:13px;padding:6px 12px;border:1px solid var(--line);border-radius:99px;color:var(--fg);text-decoration:none}
+.ph .sibs a[aria-current="page"]{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.menu{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.menu a{font-size:14px;color:var(--fg);text-decoration:none;padding:7px 12px;border-radius:8px}
+.menu a:hover,.menu a:focus-visible{background:var(--accent-soft)}
+.menu a[aria-current="page"]{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.menu a.btn{color:var(--surface);background:var(--accent);margin-left:6px}
+.crumbrow{max-width:1120px;margin:-10px auto 16px}
+.dash{max-width:1120px;margin:0 auto;display:grid;gap:22px}
+.dash h1{font-size:clamp(24px,3.4vw,30px);margin:4px 0 4px}
+.dash .lede{color:var(--muted);margin:0}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.stat b{display:block;font-family:var(--display);font-size:26px;font-variant-numeric:tabular-nums}
+.stat span{font-size:13px;color:var(--muted)}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px;min-width:0}
+.panel h2{font-size:17px;margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tbl{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px;min-width:640px}
+th{text-align:left;font-weight:500;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.06em;padding:8px 10px;border-bottom:1px solid var(--line)}
+td{padding:11px 10px;border-bottom:1px solid var(--line);vertical-align:middle;font-variant-numeric:tabular-nums}
+td.ref{font-family:var(--mono);font-size:13px}
+.pill{display:inline-block;font-size:12px;font-weight:600;padding:3px 10px;border-radius:99px;background:var(--accent-soft);color:var(--accent);white-space:nowrap}
+.pill.ok{background:color-mix(in srgb,var(--done) 15%,transparent);color:var(--done)}
+.pill.warn{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
+.pill.idle{background:color-mix(in srgb,var(--todo) 20%,transparent);color:var(--muted)}
+.act{all:unset;cursor:pointer;font-size:13px;font-weight:600;color:var(--accent);padding:4px 8px;border-radius:6px}
+.act:hover,.act:focus-visible{background:var(--accent-soft)}
+.trk td{background:var(--bg)}
+.steps{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;padding:4px 0}
+.steps span{display:flex;align-items:center;gap:6px;color:var(--muted)}
+.steps span::before{content:"";width:9px;height:9px;border-radius:50%;border:2px solid var(--todo)}
+.steps span.d{color:var(--fg)} .steps span.d::before{background:var(--done);border-color:var(--done)}
+.steps span.c{color:var(--accent);font-weight:600} .steps span.c::before{border-color:var(--accent);background:var(--accent-soft)}
+.steps span.b{color:var(--warn);font-weight:600} .steps span.b::before{border-color:var(--warn)}
+.btn.ghost{background:transparent;color:var(--accent);border:1.5px solid var(--accent)}
+.empty{color:var(--muted);font-size:14px;padding:8px 0}
+.btns{display:flex;gap:10px;flex-wrap:wrap}
+.rail li.past .dot{border-color:var(--done);color:var(--done)}
+.vendors.sol{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.vendors.sol .vendor{padding:20px;gap:6px}
+.vendors.sol .vendor b{font-size:17px}
+.vars{font-family:var(--mono);font-size:11.5px!important;color:var(--accent)!important;margin-top:4px}
+.seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:10px;padding:3px;gap:3px}
+.seg button{all:unset;cursor:pointer;padding:8px 16px;border-radius:7px;font-size:14px}
+.seg button[aria-checked="true"]{background:var(--accent);color:var(--surface);font-weight:600}
+.seg button:focus-visible,.pick:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+table.plans{min-width:620px}
+table.plans td:first-child{color:var(--fg);width:46%}
+table.plans th.pc,table.plans td.pc{text-align:center}
+table.plans .on{background:var(--accent-soft)}
+.pick{all:unset;cursor:pointer;font-family:var(--display);font-size:15px;font-weight:600;color:var(--fg);padding:6px 14px;border:1.5px solid var(--line);border-radius:8px;text-transform:none;letter-spacing:0}
+.pick[aria-pressed="true"]{border-color:var(--accent);color:var(--accent)}
+.yes{color:var(--done);font-size:13px;font-weight:500}.no{color:var(--muted);font-size:13px}
+tr.price td{font-weight:600}
+.fine{font-size:12.5px;color:var(--muted);margin:10px 0 0;max-width:70ch}
+.todo{border:1px dashed var(--line);border-radius:10px;padding:16px;margin-top:20px;font-size:14px;color:var(--muted)}
+.vols{display:flex;gap:16px;flex-wrap:wrap}
+.vols label{display:grid;gap:6px;font-size:13px;color:var(--muted);font-weight:500}
+.vols input{width:150px;padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);font:inherit;font-variant-numeric:tabular-nums}
+.est{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+table.estt{min-width:0}
+table.estt td:last-child{text-align:right;white-space:nowrap;font-weight:600}
+table.estt small{color:var(--muted);font-weight:400}
+table.estt tr.tot td{font-family:var(--display);font-size:15px;border-bottom:none}
+.ph.wide{max-width:1120px}
+table.cov{min-width:900px;font-size:13px} table.cov td{vertical-align:top} table.cov td small,table.qty td small{display:block;color:var(--muted);font-family:var(--mono);font-size:11.5px}
+.country .cn{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.country code{margin-left:6px}
+.pt{font-family:var(--mono);font-size:10.5px;padding:1px 6px;border-radius:99px;margin-left:auto;white-space:nowrap}
+.pt.yes{background:color-mix(in srgb,var(--done) 15%,transparent);color:var(--done)}
+.pt.no{background:color-mix(in srgb,var(--todo) 22%,transparent);color:var(--muted)}
+.pt.partial{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
+p.fine .pt{margin-left:0}
+table.qty{min-width:600px} table.qty input{width:96px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--fg);font:inherit;font-variant-numeric:tabular-nums}
+table.qty input:focus-visible{outline:2px solid var(--accent)}
+table.qty tfoot td,table.sumt tfoot td{font-weight:600;border-bottom:none}
+tr.warnrow td{color:var(--warn);font-size:12.5px;padding-top:0}
+tr.info td{background:var(--bg)} tr.info dl{display:grid;grid-template-columns:170px 1fr;gap:6px 14px;margin:4px 0;font-size:13px}
+tr.info dt{color:var(--muted)} tr.info dd{margin:0}
+@media (max-width:600px){tr.info dl{grid-template-columns:1fr}}
+.stats.sum{margin-top:8px;grid-template-columns:repeat(auto-fit,minmax(110px,1fr))}
+table.estt td:last-child{font-weight:400} table.estt tr.tot td{font-weight:600}
+table.sumt{min-width:640px} table.sumt td:nth-child(n+6),table.sumt th:nth-child(n+6){text-align:right}
+table.estt th:nth-child(n+2),table.estt td:nth-child(n+2){text-align:right}
+.blk{font-size:13px;color:var(--warn);margin-top:6px}
+.ds .dsh{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.ds .dsh h2{margin:4px 0 0}
+.dsa{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:14px}
+label.up{font-size:14px;padding:8px 14px}
+.dsmsg{font-size:13.5px;margin-top:8px}.dsmsg.ok,.okline{color:var(--done)}.dsmsg.bad{color:var(--warn)}
+.todo.bad{border-color:var(--warn);color:var(--fg)} .todo ul{margin:6px 0 0;padding-left:18px}
+table.rates{min-width:520px;font-size:13.5px} table.rates td,table.rates th{padding:8px 10px}
+.azbox{max-height:360px;overflow:auto;border:1px solid var(--line);border-radius:10px}
+.azbox thead th{position:sticky;top:0;background:var(--surface)}
+.feat{display:grid;grid-template-columns:1fr 1fr;gap:4px 24px}@media (max-width:640px){.feat{grid-template-columns:1fr}}
+.feat ul{list-style:none;margin:0;padding:0;display:grid;gap:6px;font-size:14px;align-content:start}
+.feat li{display:grid;grid-template-columns:18px 1fr;gap:6px}
+.feat .inc li::before{content:"\2713";color:var(--done);font-weight:700}
+.feat .exc li{color:var(--muted)} .feat .exc li::before{content:"\2013";color:var(--todo)}
+table.lines{min-width:720px} table.lines td small{display:block;color:var(--muted);font-size:12px}
+table.lines td:nth-child(n+2),table.lines th:nth-child(n+2){text-align:right;white-space:nowrap}
+table.lines tfoot td{font-weight:600;border-bottom:none}
+.disc{color:var(--done);font-weight:600}
+.grand{display:flex;flex-wrap:wrap;gap:12px;margin-top:14px}
+.grand div{flex:1 1 200px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 16px;display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.grand span{font-size:13px;color:var(--muted)} .grand b{font-family:var(--display);font-size:20px;font-variant-numeric:tabular-nums}
+.skus{display:grid;gap:10px}
+.sku{border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:grid;gap:6px}
+.sku.on{border-color:var(--accent);background:var(--accent-soft)}
+.sku.off{opacity:.55}
+.skuh{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.skuh code{display:block;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+.skup{text-align:right;margin-left:auto} .skup b{font-family:var(--display);font-variant-numeric:tabular-nums} .skup small{display:block;font-size:12px;color:var(--muted)}
+.sku p{margin:0;font-size:13.5px;color:var(--muted);max-width:75ch}
+.skuf{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.skuf small{font-size:12px;color:var(--muted)}
+.skuq{display:flex;align-items:center;gap:8px}
+.skuq input{width:90px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--fg);font:inherit;font-variant-numeric:tabular-nums}
+.vh{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+table.team{min-width:720px} table.team td{vertical-align:top} table.team td small{display:block;color:var(--muted);font-size:12px}
+table.team tr.off{opacity:.55}
+td.bands{font-size:12.5px;color:var(--muted)} td.bands span{display:block;padding:1px 0} td.bands b{color:var(--fg);font-weight:500;font-variant-numeric:tabular-nums}
+table.team input{width:80px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--fg);font:inherit}
+td.tc{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+table.estt th:nth-child(4),table.estt td:nth-child(4){text-align:right}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px 16px}
+.fld{display:grid;gap:5px;font-size:13px;color:var(--muted);font-weight:500;min-width:0}
+.fld.wide{grid-column:1/-1}
+.fld input,.fld select,.fld textarea,table.ent input{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);font:inherit;font-weight:400}
+.fld :focus-visible,table.ent input:focus-visible{outline:2px solid var(--accent)}
+table.ent{min-width:640px} table.ent td small{display:block;color:var(--muted);font-size:12px}
+.qhead{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-top:8px}
+.qhead b{display:block;font-family:var(--display);font-size:15px;margin-top:4px} .qhead span{display:block;font-size:13px;color:var(--muted)}
+table.lines td:nth-child(6),table.lines th:nth-child(6){text-align:right}
+.grand.four div{flex:1 1 180px}
+table.sumt td small{display:block;color:var(--muted);font-size:12px}
+.dlbar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:6px}.dlbar .fine{margin:0;max-width:60ch}
+.regions{border:1px dashed var(--accent);border-radius:10px;padding:14px 16px;margin-bottom:12px;display:grid;gap:10px}
+.regions p{margin:2px 0 0}.regf{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+.regf input{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--fg);font:inherit}
+.rule{font-size:12.5px;color:var(--accent);font-weight:500}
+.skuq input[readonly]{background:var(--accent-soft);border-color:var(--accent)}
+tr.subrow td{background:var(--accent-soft);font-size:13.5px} tr.subrow td:first-child{padding-left:22px}
+table.qty select{padding:7px 8px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--fg);font:inherit}
+/* coverage map */
+.mapwrap{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;margin-top:18px;align-items:start}
+@media (max-width:900px){.mapwrap{grid-template-columns:1fr}}
+.mapbox{position:relative;border:1px solid var(--line);border-radius:12px;background:color-mix(in srgb,var(--accent-soft) 45%,var(--surface));overflow:hidden}
+.mapbox svg{display:block;width:100%;height:auto;touch-action:none;cursor:grab}
+.mapbox svg.drag{cursor:grabbing}
+.mapbox path{fill:color-mix(in srgb,var(--todo) 28%,var(--surface));stroke:var(--surface);stroke-width:.5;vector-effect:non-scaling-stroke}
+.mapbox path.on,.mapbox circle.on{fill:var(--accent);cursor:pointer}
+.mapbox path.on:hover,.mapbox path.on.hot,.mapbox circle.on:hover,.mapbox circle.on.hot{fill:color-mix(in srgb,var(--accent) 70%,var(--fg))}
+.mapbox path.sel,.mapbox circle.sel{fill:var(--warn)!important;stroke:var(--fg);stroke-width:1}
+.mapbox path.off:hover{fill:color-mix(in srgb,var(--todo) 45%,var(--surface))}
+.mapbox circle.on{stroke:var(--surface);stroke-width:1;vector-effect:non-scaling-stroke}
+.mapbox svg :focus{outline:none} .mapbox svg :focus-visible{stroke:var(--fg);stroke-width:2}
+.maptools{display:flex;flex-wrap:wrap;gap:6px;padding:10px 12px;border-bottom:1px solid var(--line);background:var(--surface)}
+.maptools button{all:unset;cursor:pointer;background:var(--surface);border:1px solid var(--line);border-radius:7px;padding:5px 10px;font-size:12.5px}
+.maptools button[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);font-weight:600}
+.maptools button:focus-visible{outline:2px solid var(--accent)}
+.maptip{position:absolute;pointer-events:none;background:var(--fg);color:var(--surface);font-size:12.5px;padding:4px 8px;border-radius:6px;white-space:nowrap;transform:translate(-50%,-130%)}
+.maplegend{display:flex;flex-wrap:wrap;gap:14px;font-size:12.5px;color:var(--muted);padding:10px 12px;border-top:1px solid var(--line);background:var(--surface)}
+.maplegend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.side{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:18px;display:grid;gap:12px;position:sticky;top:12px}
+.side h2{font-size:20px}
+.side .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:13.5px;margin:0}
+.side .kv dt{color:var(--muted)} .side .kv dd{margin:0}
+.side h3{font-size:13px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);border-top:1px solid var(--line);padding-top:10px}
+.side p{margin:0;font-size:13.5px}
+.side .empty{color:var(--muted);font-size:14px}
+.side .btn{justify-self:start;font-size:14px}
+.covlist{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.covlist button{all:unset;cursor:pointer;font-size:12.5px;padding:3px 9px;border:1px solid var(--line);border-radius:99px}
+.covlist button:hover,.covlist button:focus-visible{border-color:var(--accent);color:var(--accent)}
+.tilemap{display:block;border-radius:10px;overflow:hidden;background:color-mix(in srgb,var(--accent-soft) 45%,var(--surface));border:1px solid var(--line)}
+.tilemap svg{display:block;width:100%;height:auto}
+.tilemap path{fill:color-mix(in srgb,var(--todo) 28%,var(--surface));stroke:none}
+.tilemap path.on,.tilemap circle{fill:var(--accent)}
+/* connectors and routing */
+.conns{display:grid;gap:12px;margin-bottom:12px}
+.conn{border:1px solid var(--line);border-radius:12px;padding:16px;display:grid;gap:12px;background:var(--surface)}
+.conn.plat{background:var(--accent-soft);border-color:color-mix(in srgb,var(--accent) 40%,var(--line))}
+.conn.clus{border-style:dashed;border-color:var(--accent)}
+.connh{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.connh b{font-family:var(--display);font-size:15px}
+.connh .act{margin-left:auto}
+.cname{font:600 15px var(--display);color:var(--fg);background:transparent;border:1px solid transparent;border-radius:6px;padding:4px 6px;min-width:0;flex:1 1 160px}
+.cname:hover{border-color:var(--line)} .cname:focus-visible{outline:2px solid var(--accent);border-color:transparent}
+.pill{font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:99px;background:var(--accent-soft);color:var(--accent);white-space:nowrap}
+.cgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;align-items:start}
+.chips input{width:auto!important;padding:0!important;margin:0 4px 0 0;accent-color:var(--accent)}
+#rt .stats{margin-top:16px}
+.cgrid .wide{grid-column:1/-1}
+.popinfo{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px 12px;font-size:13px;background:var(--bg);border-radius:8px;padding:10px 12px}
+.popinfo code{font-family:var(--mono);font-size:12.5px;color:var(--accent)} .popinfo small{display:block;color:var(--muted);font-size:12px}
+.wt{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.wt input{width:70px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);font:inherit}
+.ciss{display:grid;gap:4px} .ciss:empty{display:none} .ciss span{font-size:13px;color:var(--warn)} .ciss span::before{content:"! ";font-weight:700}
+.members{margin:0;padding-left:20px;display:grid;gap:6px;font-size:14px;color:var(--fg)}
+.members li span{float:right} .members .act[disabled]{opacity:.35;cursor:default}
+.chips{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13.5px;color:var(--fg);font-weight:400}
+.chips .add{border:1px dashed var(--line)}
+.say{margin:0;font-size:14px;background:var(--bg);border-left:3px solid var(--accent);padding:8px 12px;border-radius:0 8px 8px 0}
+.btn.ghost{background:transparent;color:var(--accent);border:1.5px solid var(--accent);padding:8px 16px}
+.rtg{display:grid;gap:8px}
+</style>
+
+<header class="top"><a class="brand" href="#home">UC Order Hub</a>
+  <nav class="menu" id="menu" aria-label="Main">
+    <a href="#home" data-v="home">Home</a>
+    <a href="#dashboard" data-v="dashboard">Dashboard</a>
+    <a href="#quotes" data-v="quotes">My quotes</a>
+    <a href="#orders" data-v="orders">My orders</a>
+    <a href="#data" data-v="data">Data files</a>
+    <a href="#order" class="btn">New order</a>
+  </nav></header>
+<nav class="crumb crumbrow" id="crumb"></nav>
+
+<section class="dash" id="v-dash" hidden>
+  <div><div class="eyebrow" id="dash-eyebrow">Dashboard</div><h1 id="dash-title">Your quotes and orders</h1>
+  <p class="lede" id="dash-lede">Pick up a quote where you left off, or check how an order is progressing.</p></div>
+  <div class="stats" id="stats"></div>
+  <div class="panel" id="p-quotes"><h2>Quotes <span class="sample">examples plus anything you save</span></h2><div class="tbl" id="t-quotes"></div></div>
+  <div class="panel" id="p-orders"><h2>Orders <span class="sample">examples</span></h2><div class="tbl" id="t-orders"></div></div>
+</section>
+
+<section class="home" id="v-home">
+  <div class="hero">
+    <div class="eyebrow">GSIP · Microsoft · Cisco · Zoom</div>
+    <h1>Order and manage business calling in one place</h1>
+    <p>Start an order, check country coverage and paperwork, find answers, or look up technical details.</p>
+  </div>
+  <div class="tiles" id="tiles"></div>
+</section>
+
+<section class="dash" id="v-data" hidden></section>
+
+<section id="v-page" hidden><div class="ph" id="page"></div></section>
+
+<div class="wrap" id="v-order" hidden>
+  <aside class="rail">
+    <div class="eyebrow">Lead to order</div>
+    <h2>The customer journey</h2>
+    <ol id="rail"></ol>
+    <p class="note">Steps 1 to 10 are built. Countries, plans and prices are read from your Excel files (see Data files).</p>
+  </aside>
+
+  <main class="app">
+    <div class="hero">
+      <div class="eyebrow" id="o-eyebrow"></div>
+      <h1 id="o-title"></h1>
+      <p id="o-lede"></p>
+    </div>
+    <div id="o-body"></div>
+    <div class="bar">
+      <div class="summary" id="summary"></div>
+      <div class="btns">
+        <span class="btn ghost" role="button" tabindex="0" id="back">Back</span>
+        <span class="btn ghost" role="button" tabindex="0" id="save" aria-disabled="true">Save as quote</span>
+        <span class="btn" role="button" tabindex="0" id="next" aria-disabled="true">Continue</span>
+      </div>
+    </div>
+    <div class="msg" id="msg" hidden></div>
+  </main>
+</div>
+
+<script src="vendor/xlsx-0.18.5.full.min.js"></script>
+<script src="hosted.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const money=n=>"$"+(+n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+const umoney=n=>"$"+(+n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:4});
+const int=n=>(+n||0).toLocaleString("en-US");
+const keyBtn=(id,fn)=>{$(id).onclick=fn;$(id).onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();fn()}}};
+
+// ================= Data files =================
+// The page reads three Excel workbooks. Defaults ship with the page (data/*.xlsx);
+// an editor can replace any of them on the Data files page, which stores the parsed sheets in the page's database.
+const DATASETS=[
+  {key:"plans",file:"data/tc-plans.json",label:"Service plans and discounts",orig:"TC Microsoft Plans.xlsx",
+    used:"Plan features, per-user and per-site prices, India Operator Connect SKU, volume discounts",sheets:["Microsoft","CISCO","Plan Discount Structure"]},
+  {key:"anr",file:"data/domestic-voice-anr.json",label:"Domestic voice ANR (countries and restrictions)",orig:"Domestic_Voice_ANR_Sample.xlsx",
+    used:"Country list, ISO codes, number ranges, porting, restrictions, required documents",sheets:[0]},
+  {key:"pricebook",file:"data/pricebook-gsip.json",label:"GSIP price book",orig:"PriceBook GSIP.xlsx",
+    used:"Number and channel NRC/MRC, new country setup charge, domestic and international per-minute rates",sheets:["PSTN Rates","Domestic Rates","International AtoZ Rates"]},
+  {key:"equipment",file:"data/equipment-skus.json",label:"Equipment and add-on SKUs",orig:"Tata_UC_SKU_to_AudioCodes_Live_Mapping.xlsx",
+    used:"Cloud and on-prem SBCs, ATAs, support, platform and operator connections, with list prices",sheets:["SKU Mapping"]},
+  {key:"team",file:"data/delivery-team.json",label:"Delivery team (Day 1 and Day 2)",orig:"Delivery Team.xlsx",
+    used:"Project manager, design architect and porting rates by month, plan availability, Day 2 service delivery managers",sheets:[0]},
+  {key:"pops",file:"data/tc-pops.json",label:"Tata PoPs and connector options",orig:"tc-pops.xlsx",
+    used:"Tata PoPs by region with signalling and media IPs, encryption, routing and cluster options, platform connector names",sheets:["PoPs","Connector options"]}
+];
+const RAW={};      // key -> {sheets:{name:rows[][]}, source:"bundled"|"uploaded", fileName, uploadedAt}
+let DATA=null;     // parsed model
+let dataErr=null;
+let db=null, canEditData=false;
+
+function wbToSheets(wb){const o={};wb.SheetNames.forEach(n=>{o[n]=XLSX.utils.sheet_to_json(wb.Sheets[n],{header:1,raw:true,defval:null,blankrows:false})});return o}
+const txt=v=>v==null?"":String(v).trim();
+const num=v=>{if(typeof v==="number")return v;const m=txt(v).replace(/,/g,"").match(/-?\d+(\.\d+)?/);return m?+m[0]:0};
+const findRow=(rows,pred)=>rows.findIndex(r=>r&&r.some(c=>pred(txt(c))));
+const sheetByName=(sheets,name)=>{if(typeof name==="number")return Object.values(sheets)[name];const k=Object.keys(sheets).find(n=>n.trim().toLowerCase()===name.toLowerCase());return k?sheets[k]:null};
+
+function parsePlanSheet(rows){
+  const hi=rows.findIndex(r=>r&&r.filter(c=>txt(c)).length>=3);
+  if(hi<0)throw new Error("no header row with plan names");
+  const names=rows[hi].slice(1).map(txt).filter(Boolean);
+  const out={names,features:[],userMRC:[],userNRC:[],siteMRC:[],siteNRC:[],india:null};
+  let pricing=false;
+  for(const r of rows.slice(hi+1)){
+    const label=txt(r[0]); if(!label)continue;
+    if(/^pricing/i.test(label)){pricing=true;continue}
+    if(/sp(ec|ce)ial sku|india|indai/i.test(label)){out.india=num(r[1]);continue}
+    if(!pricing){out.features.push([label,...names.map((_,i)=>/\u2705|^included/i.test(txt(r[i+1]))?1:0)]);continue}
+    const vals=names.map((_,i)=>num(r[i+1]));
+    if(/user/i.test(label)&&/month|mrc/i.test(label))out.userMRC=vals;
+    else if(/user/i.test(label)&&/one time|nrc/i.test(label))out.userNRC=vals;
+    else if(/site/i.test(label)&&/month|mrc/i.test(label))out.siteMRC=vals;
+    else if(/site/i.test(label)&&/one time|nrc/i.test(label))out.siteNRC=vals;
+  }
+  ["userMRC","userNRC","siteMRC","siteNRC"].forEach(k=>{if(!out[k].length)throw new Error(`missing pricing row for ${k}`)});
+  return out;
+}
+function parseDiscounts(rows){
+  const user=[],site=[];let cur=user;
+  for(const r of rows){
+    const l=txt(r[0]); if(!l)continue;
+    if(/site/i.test(l)&&/discount/i.test(l)){cur=site;continue}
+    if(/per user/i.test(l)){cur=user;continue}
+    const ns=l.match(/\d+/g); if(!ns)continue;
+    const max=/\+/.test(l)||ns.length<2?Infinity:+ns[1];
+    cur.push([max,num(r[1])]);
+  }
+  if(!user.length||!site.length)throw new Error("could not find user and site discount bands");
+  return {user,site};
+}
+function parseANR(rows){
+  const hi=findRow(rows,c=>/^country name$/i.test(c)); if(hi<0)throw new Error('no "Country Name" header');
+  const H=rows[hi].map(txt), col=re=>H.findIndex(h=>re.test(h));
+  const c={name:col(/country name/i),iso:col(/iso/i),range:col(/number range/i),port:col(/porting available/i),restr:col(/restriction/i),
+    newDocs:col(/new number doc/i),portDocs:col(/porting number doc/i),src:col(/source/i)};
+  if(c.iso<0)throw new Error('no "ISO Code" column');
+  return rows.slice(hi+1).filter(r=>txt(r[c.name])).map(r=>{const range=txt(r[c.range]);const port=txt(r[c.port]);
+    return {name:txt(r[c.name]),iso:txt(r[c.iso]).toUpperCase(),range,dial:(range.match(/^\+\d+/)||[""])[0],
+      port,portable:/^yes/i.test(port)?"yes":/^no/i.test(port)?"no":"partial",restr:txt(r[c.restr]),newDocs:txt(r[c.newDocs]),portDocs:txt(r[c.portDocs]),src:txt(r[c.src])}});
+}
+function parsePSTN(rows){
+  const hi=findRow(rows,c=>/number nrc/i.test(c)); if(hi<0)throw new Error('no "Number NRC" header');
+  const H=rows[hi].map(txt), col=re=>H.findIndex(h=>re.test(h));
+  const c={nN:col(/number nrc/i),nM:col(/number mrc/i),cN:col(/channel nrc/i),cM:col(/channel mrc/i),setup:col(/setup/i)};
+  const o={};rows.slice(hi+1).forEach(r=>{const n=txt(r[0]);if(n)o[n.toLowerCase()]={numNRC:num(r[c.nN]),numMRC:num(r[c.nM]),chNRC:num(r[c.cN]),chMRC:num(r[c.cM]),setup:num(r[c.setup])}});
+  return o;
+}
+function parseDomestic(rows){
+  const hi=findRow(rows,c=>/domestic/i.test(c)); if(hi<0)throw new Error('no "Domestic" header');
+  const H=rows[hi].map(txt), col=re=>H.findIndex(h=>re.test(h));
+  const c={f:col(/fixed/i),m:col(/mobile/i),s:col(/special/i)};
+  const o={};rows.slice(hi+1).forEach(r=>{const n=txt(r[0]);if(n)o[n.toLowerCase()]={fixed:num(r[c.f]),mobile:num(r[c.m]),special:num(r[c.s])}});
+  return o;
+}
+// Excel turned increments like "1/1" and "6/6" into dates; show them as billing increments again.
+function incr(v){if(typeof v==="number"&&v>20000){const d=new Date(Date.UTC(1899,11,30)+v*864e5);return `${d.getUTCMonth()+1}/${d.getUTCDate()}`}return txt(v)}
+function parseAZ(rows){
+  const hi=findRow(rows,c=>/^prefix$/i.test(c)); if(hi<0)return [];
+  const H=rows[hi].map(txt), col=re=>H.findIndex(h=>re.test(h));
+  const c={country:col(/^country/i),dest:col(/destination/i),prefix:col(/prefix/i),rate:col(/rate/i),inc:col(/increment/i),route:col(/route/i)};
+  return rows.slice(hi+1).filter(r=>txt(r[c.country])).map(r=>({country:txt(r[c.country]),dest:txt(r[c.dest]),prefix:txt(r[c.prefix]),rate:num(r[c.rate]),inc:incr(r[c.inc]),route:txt(r[c.route])}));
+}
+function parseSKUs(rows){
+  const hi=findRow(rows,c=>/sku code/i.test(c)); if(hi<0)throw new Error('SKU sheet: no "SKU code" header');
+  const H=rows[hi].map(txt), col=re=>H.findIndex(h=>re.test(h));
+  const c={code:col(/sku code/i),cat:col(/^category/i),name:col(/sku name/i),desc:col(/^description/i),tier:col(/plan tier/i),uom:col(/unit of measure/i),charge:col(/charge type/i),term:col(/min.*term/i),price:col(/list price|price/i)};
+  if(c.price<0)throw new Error('SKU sheet: no price column');
+  return rows.slice(hi+1).filter(r=>/^[A-Z]{2}-/.test(txt(r[c.code]))).map(r=>({code:txt(r[c.code]),cat:txt(r[c.cat]),name:txt(r[c.name]),desc:txt(r[c.desc]),tier:txt(r[c.tier]),uom:txt(r[c.uom]),charge:txt(r[c.charge]),term:txt(r[c.term]),price:num(r[c.price])}));
+}
+function buildModel(){
+  const issues=[];
+  const p=RAW.plans.sheets, a=RAW.anr.sheets, b=RAW.pricebook.sheets;
+  const need=(sheets,n,ds)=>{const s=sheetByName(sheets,n);if(!s)throw new Error(`${ds}: sheet "${n}" not found`);return s};
+  const PLANS={ms:parsePlanSheet(need(p,"Microsoft","Plans file")),cisco:parsePlanSheet(need(p,"CISCO","Plans file"))};
+  const DISC=parseDiscounts(need(p,"Plan Discount Structure","Plans file"));
+  const anr=parseANR(need(a,0,"ANR file"));
+  const pstn=parsePSTN(need(b,"PSTN Rates","Price book")), dom=parseDomestic(need(b,"Domestic Rates","Price book"));
+  const az=sheetByName(b,"International AtoZ Rates");
+  const COUNTRIES=anr.map(c=>{const k=c.name.toLowerCase();const r=pstn[k];if(!r)issues.push(`${c.name} is in the ANR file but has no PSTN rate in the price book`);
+    return {...c,rates:r||null,dom:dom[k]||null}});
+  Object.keys(pstn).forEach(k=>{if(!anr.some(c=>c.name.toLowerCase()===k))issues.push(`"${k}" has PSTN rates but is not in the ANR file`)});
+  const AZ=az?parseAZ(az):[];
+  const TEAM=parseTeam(need(RAW.team.sheets,0,"Delivery team file"));
+  const EQUIP=parseSKUs(need(RAW.equipment.sheets,"SKU Mapping","SKU sheet"));
+  const ps=need(RAW.pops.sheets,"PoPs","PoP file"),POPS=parsePoPs(ps),CONNOPTS=parseConnOpts(need(RAW.pops.sheets,"Connector options","PoP file"));
+  const POPS_SAMPLE=ps.slice(0,3).some(r=>r&&r.some(c=>/sample/i.test(txt(c))));
+  return {PLANS,DISC,COUNTRIES,issues,AZ,EQUIP,TEAM,POPS,CONNOPTS,POPS_SAMPLE,azRows:AZ.length};
+}
+async function loadBundled(ds){
+  const res=await fetch(ds.file); if(!res.ok)throw new Error(`could not load ${ds.file}`);
+  return {sheets:await res.json(),source:"bundled",fileName:ds.orig};
+}
+async function loadData(){
+  try{
+    for(const ds of DATASETS){
+      let rec=null;
+      if(db){try{const snap=await db.doc("datasets/"+ds.key).get();if(snap.exists){const d=snap.data();rec={sheets:JSON.parse(d.sheetsJson),source:"uploaded",fileName:d.fileName,uploadedAt:d.uploadedAt}}}catch(e){}}
+      RAW[ds.key]=rec||await loadBundled(ds);
+    }
+    DATA=buildModel();dataErr=null;
+  }catch(e){dataErr=e.message;console.error(e)}
+}
+
+// ================= Connectors and routing =================
+// A connector links the customer's voice infrastructure to Tata Communications. Each customer site gets two links, one to each of
+// two Tata PoPs in its region. Platform connectors (Microsoft, Webex, Zoom) are created from the solution. Clusters group connectors for failover.
+function parsePoPs(rows){
+  const hi=findRow(rows,c=>/^pop code$/i.test(c)); if(hi<0)throw new Error('no "PoP code" header');
+  const H=rows[hi].map(txt),col=re=>H.findIndex(h=>re.test(h));
+  const c={reg:col(/region/i),code:col(/pop code/i),city:col(/city/i),iso:col(/country/i),sig:col(/signal/i),media:col(/media/i),ports:col(/port/i),rank:col(/rank/i)};
+  return rows.slice(hi+1).filter(r=>r&&txt(r[c.code])).map(r=>({region:txt(r[c.reg]),code:txt(r[c.code]),city:txt(r[c.city]),iso:txt(r[c.iso]).toUpperCase(),ip:txt(r[c.sig]),media:txt(r[c.media]),ports:txt(r[c.ports]),rank:num(r[c.rank])||99}));
+}
+function parseConnOpts(rows){
+  const hi=findRow(rows,c=>/^setting$/i.test(c)); if(hi<0)throw new Error('no "Setting" header');
+  const o={};rows.slice(hi+1).forEach(r=>{const k=txt(r&&r[0]).toLowerCase();if(!k||!txt(r[1]))return;(o[k]=o[k]||[]).push({name:txt(r[1]),desc:txt(r[2]),def:/^y/i.test(txt(r[3]))})});
+  ["encryption","routing","cluster mode"].forEach(k=>{if(!o[k])throw new Error(`no "${k}" options`)});
+  return o;
+}
+const AMER=new Set("US CA MX BR AR CL CO CR DO SV PA PE".split(" ")),APACS=new Set("AU NZ IN ID JP KR MY PH SG TW TH VN HK CN".split(" "));
+const regionOf=iso=>AMER.has(iso)?"Americas":APACS.has(iso)?"APAC":"EMEA";
+const pop=code=>DATA.POPS.find(p=>p.code===code);
+const opt=k=>DATA.CONNOPTS[k]||[];
+const optDef=k=>(opt(k).find(x=>x.def)||opt(k)[0]||{name:""}).name;
+function defaultPops(iso){const l=DATA.POPS.filter(p=>p.region===regionOf(iso)).sort((a,b)=>(a.iso===iso?0:1)-(b.iso===iso?0:1)||a.rank-b.rank);
+  const all=l.length?l:DATA.POPS;return [all[0]&&all[0].code,(all[1]||all[0]||{}).code]}
+function platformNames(){
+  const pick=(re,fb)=>((opt("platform connector").find(x=>re.test(x.name))||{}).name)||fb;
+  if(S.sol==="ms"){const oc=pick(/operator connect/i,"Microsoft Operator Connect"),dr=pick(/direct routing/i,"Microsoft Teams Direct Routing (DRaaS)");
+    return S.variant===HYBRID?[oc,dr]:/direct/i.test(S.variant||"")?[dr]:[oc]}
+  if(S.sol==="cisco"&&/webex/i.test(S.variant||""))return [pick(/webex/i,"Cisco Webex Calling")];
+  if(S.sol==="zoom")return [pick(/zoom/i,"Zoom Phone")];
+  return [];
+}
+let cid=0;const newId=p=>p+Date.now().toString(36)+(cid++);
+function newSite(){const n=S.connectors.filter(c=>c.kind==="sbc").length+1,iso=[...picked][0]||"";
+  return {id:newId("c"),kind:"sbc",name:S.sol==="cisco"&&!/webex/i.test(S.variant||"")&&n===1?"Cisco CUBE":`Site ${n}`,iso,city:"",ips:"",media:"",pops:defaultPops(iso),enc:optDef("encryption"),routing:optDef("routing"),weight:70}}
+function syncConnectors(){
+  S.connectors=S.connectors||[];S.clusters=S.clusters||[];
+  const want=platformNames();
+  S.connectors=S.connectors.filter(c=>c.kind!=="platform"||want.includes(c.name));
+  want.forEach((n,i)=>{if(!S.connectors.some(c=>c.kind==="platform"&&c.name===n))S.connectors.splice(i,0,{id:"p-"+n.toLowerCase().replace(/[^a-z]+/g,"-"),kind:"platform",name:n})});
+  if(!want.length&&!S.connectors.some(c=>c.kind==="sbc"))S.connectors.push(newSite());
+  const ids=new Set(S.connectors.map(c=>c.id));S.clusters.forEach(k=>k.members=k.members.filter(m=>ids.has(m)));
+}
+const ipOk=s=>{const m=s.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);if(m)return m.slice(1).every(x=>+x<=255);return /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/i.test(s)};
+const ipList=s=>String(s||"").split(/[\s,;]+/).filter(Boolean);
+function connIssues(c){
+  if(c.kind!=="sbc")return [];const o=[],l=ipList(c.ips),bad=l.filter(x=>!ipOk(x));
+  if(!c.iso)o.push("Choose the site country.");
+  if(!l.length)o.push("Enter at least one SBC IP address or FQDN.");else if(bad.length)o.push(`Not a valid IP address or FQDN: ${bad.join(", ")}.`);
+  if(!c.pops[0]||c.pops[0]===c.pops[1])o.push("Pick two different Tata PoPs so the site stays up if one fails.");
+  return o;
+}
+const clusterIssues=k=>k.members.length<2?["Add at least two connectors to the cluster."]:[];
+const routingOk=()=>S.connectors&&S.connectors.length&&S.connectors.every(c=>!connIssues(c).length)&&S.clusters.every(k=>!clusterIssues(k).length);
+const connLabel=id=>{const c=S.connectors.find(x=>x.id===id);return c?c.name+(c.kind==="sbc"&&c.city?` (${c.city})`:""):"?"};
+function clusterSentence(k){const m=k.members.map(connLabel);if(!m.length)return "No connectors yet.";
+  const scope=k.scope==="countries"&&k.countries.length?k.countries.map(i=>country(i).name).join(", ")+" numbers":"All numbers";
+  return /fail|overflow/i.test(k.mode)?`${scope}: ${m[0]} first${m.slice(1).map(x=>`, then ${x}`).join("")}.`:`${scope}: shared across ${m.join(", ")}.`}
+function routingQuoteHTML(){
+  syncConnectors();
+  return `<div class="section"><h3>Connectors and routing</h3><div class="tbl"><table class="sumt"><thead><tr><th>Connector</th><th>Site</th><th>Customer SBC</th><th>Tata PoPs</th><th>Encryption and routing</th></tr></thead><tbody>
+    ${S.connectors.map(c=>c.kind==="platform"?`<tr><td><b>${esc(c.name)}</b></td><td colspan="4">Platform connector, set up by Tata Communications</td></tr>`:
+      `<tr><td><b>${esc(c.name)}</b></td><td>${esc([c.city,c.iso&&country(c.iso).name].filter(Boolean).join(", "))}</td><td>${esc(ipList(c.ips).join(", "))}</td><td>${c.pops.map(x=>esc((pop(x)||{}).city||x)).join(" and ")}</td><td>${esc(c.enc)}<small>${esc(c.routing)}</small></td></tr>`).join("")}
+    ${S.clusters.map(k=>`<tr><td><b>${esc(k.name)}</b><small>Cluster · ${esc(k.mode)}</small></td><td colspan="4">${esc(clusterSentence(k))}</td></tr>`).join("")}</tbody></table></div></div>`;
+}
+function stepRouting(){
+  syncConnectors();
+  $("o-title").textContent="Connectors and routing";
+  $("o-lede").textContent="A connector links the customer's voice infrastructure to Tata Communications. Every customer site connects to two Tata PoPs in its region, so calls keep flowing if one fails. Group connectors into clusters to set up failover between them.";
+  const sel=(f,id,list,cur,lab)=>`<label class="fld"><span>${lab}</span><select data-c="${id}" data-f="${f}">${list.map(o=>`<option${o.name===cur?" selected":""}>${esc(o.name)}</option>`).join("")}</select></label>`;
+  const popSel=(c,i)=>`<label class="fld"><span>${i?"Secondary":"Primary"} Tata PoP</span><select data-c="${c.id}" data-f="pop${i}">${["APAC","EMEA","Americas"].map(r=>`<optgroup label="${r}">${DATA.POPS.filter(p=>p.region===r).map(p=>`<option value="${p.code}"${c.pops[i]===p.code?" selected":""}>${esc(p.city)} (${p.code})</option>`).join("")}</optgroup>`).join("")}</select></label>`;
+  const popInfo=code=>{const p=pop(code);return p?`<div><b>${esc(p.city)}</b> <code>${esc(p.ip)}</code><small>Media ${esc(p.media)} · ${esc(p.ports)}</small></div>`:""};
+  const countries=[...new Set([...picked,...DATA.COUNTRIES.map(c=>c.iso)])];
+  const card=c=>{
+    if(c.kind==="platform")return `<div class="conn plat"><div class="connh"><b>${esc(c.name)}</b><span class="pill">Platform connector</span></div><p class="fine">Added because of the solution you chose. Tata Communications sets up this connection with the platform from its own PoPs, so there's nothing to configure here.</p></div>`;
+    const iss=connIssues(c),r=opt("routing").find(x=>x.name===c.routing),e=opt("encryption").find(x=>x.name===c.enc);
+    return `<div class="conn" data-card="${c.id}"><div class="connh"><input class="cname" data-c="${c.id}" data-f="name" value="${esc(c.name)}" aria-label="Connector name"><span class="pill">${c.iso?regionOf(c.iso):"Site"} · 2 links</span><button class="act" data-del="${c.id}">Remove</button></div>
+      <div class="cgrid">
+        <label class="fld"><span>Site country</span><select data-c="${c.id}" data-f="iso"><option value="">Choose</option>${countries.map(i=>`<option value="${i}"${c.iso===i?" selected":""}>${esc(country(i).name)}</option>`).join("")}</select></label>
+        <label class="fld"><span>City or site name</span><input data-c="${c.id}" data-f="city" value="${esc(c.city)}" placeholder="e.g. New York"></label>
+        <label class="fld"><span>Customer SBC IP addresses or FQDNs</span><textarea rows="2" data-c="${c.id}" data-f="ips" placeholder="One per line, e.g. 203.0.113.25">${esc(c.ips)}</textarea></label>
+        <label class="fld"><span>Customer media IP range (optional)</span><input data-c="${c.id}" data-f="media" value="${esc(c.media)}" placeholder="e.g. 10.20.0.0/24"></label>
+        ${popSel(c,0)}${popSel(c,1)}
+        <div class="popinfo wide">${popInfo(c.pops[0])}${popInfo(c.pops[1])}</div>
+        ${sel("enc",c.id,opt("encryption"),c.enc,"Transport and encryption")}
+        <div class="rtg">${sel("routing",c.id,opt("routing"),c.routing,"Routing between the two PoPs")}
+          ${/weight/i.test(c.routing)?`<label class="wt">Primary PoP share <input type="number" min="1" max="99" data-c="${c.id}" data-f="weight" value="${c.weight}">% · secondary ${100-c.weight}%</label>`:""}</div>
+        <p class="fine wide">${esc(e?e.desc:"")} ${esc(r?r.desc:"")}</p>
+      </div><div class="ciss" id="iss-${c.id}">${iss.map(x=>`<span>${esc(x)}</span>`).join("")}</div></div>`};
+  const ccard=k=>`<div class="conn clus" data-card="${k.id}"><div class="connh"><input class="cname" data-k="${k.id}" data-f="name" value="${esc(k.name)}" aria-label="Cluster name"><span class="pill">Cluster</span><button class="act" data-kdel="${k.id}">Remove</button></div>
+    <div class="cgrid">${sel("mode",k.id,opt("cluster mode"),k.mode,"How the cluster routes calls").replace('data-c=','data-k=')}
+      <label class="fld"><span>Use this cluster for</span><select data-k="${k.id}" data-f="scope"><option value="all"${k.scope!=="countries"?" selected":""}>All numbers</option><option value="countries"${k.scope==="countries"?" selected":""}>Numbers in chosen countries</option></select></label>
+      ${k.scope==="countries"?`<div class="fld wide"><span>Countries</span><div class="chips">${[...picked].map(i=>`<label><input type="checkbox" data-k="${k.id}" data-ctry="${i}"${k.countries.includes(i)?" checked":""}> ${esc(country(i).name)}</label>`).join("")||"Pick countries in step 3 first."}</div></div>`:""}
+      <div class="fld wide"><span>Connectors, in order of priority</span><ol class="members">${k.members.map((m,i)=>`<li><b>${esc(connLabel(m))}</b><span><button class="act" data-up="${k.id}:${i}" ${i?"":"disabled"} aria-label="Move up">↑</button><button class="act" data-down="${k.id}:${i}" ${i<k.members.length-1?"":"disabled"} aria-label="Move down">↓</button><button class="act" data-out="${k.id}:${m}">Remove</button></span></li>`).join("")}</ol>
+        <div class="chips">${S.connectors.filter(c=>!k.members.includes(c.id)).map(c=>`<button class="act add" data-in="${k.id}:${c.id}">+ ${esc(connLabel(c.id))}</button>`).join("")}</div></div>
+      <p class="say wide">${esc(clusterSentence(k))}</p></div>
+    <div class="ciss">${clusterIssues(k).map(x=>`<span>${esc(x)}</span>`).join("")}</div></div>`;
+  const draw=()=>{
+    const sites=S.connectors.filter(c=>c.kind==="sbc"),plats=S.connectors.filter(c=>c.kind==="platform");
+    $("o-body").innerHTML=`<div id="rt">
+      <div class="stats">${[[sites.length,"Customer sites"],[sites.length*2,"Links to Tata PoPs"],[plats.length,"Platform connectors"],[S.clusters.length,"Clusters"]].map(([n,l])=>`<div class="stat"><b>${n}</b><span>${l}</span></div>`).join("")}</div>
+      ${DATA.POPS_SAMPLE?`<p class="fine">Tata PoP addresses are sample data from the PoP file. Replace them on the Data files page.</p>`:""}
+      <div class="section"><h3>Connectors</h3><div class="conns">${S.connectors.map(card).join("")}</div><button class="btn ghost" id="addc">Add a site connector</button></div>
+      <div class="section"><h3>Clusters (advanced routing)</h3><p class="fine" style="margin:-6px 0 12px">Optional. A cluster groups connectors so one backs up another, for example US backed up by Europe, or Microsoft falling back to a GSIP site.</p>
+        <div class="conns">${S.clusters.map(ccard).join("")}</div><button class="btn ghost" id="addk"${S.connectors.length<2?' aria-disabled="true" title="Add a second connector first"':""}>Add a cluster</button></div></div>`;
+    bind();update();
+  };
+  const C=id=>S.connectors.find(c=>c.id===id),K=id=>S.clusters.find(k=>k.id===id);
+  const refreshIss=c=>{const el=$("iss-"+c.id);if(el)el.innerHTML=connIssues(c).map(x=>`<span>${esc(x)}</span>`).join("");update()};
+  function bind(){
+    const rt=$("rt");
+    rt.oninput=e=>{const t=e.target,f=t.dataset.f;
+      if(t.dataset.c&&["name","city","ips","media","weight"].includes(f)){const c=C(t.dataset.c);c[f]=f==="weight"?Math.min(99,Math.max(1,+t.value||50)):t.value;refreshIss(c);
+        if(f==="weight"){const w=t.parentElement;w.lastChild.textContent=`% · secondary ${100-c.weight}%`}}
+      if(t.dataset.k&&f==="name")K(t.dataset.k).name=t.value};
+    rt.onchange=e=>{const t=e.target,f=t.dataset.f;
+      if(t.dataset.c&&t.tagName==="SELECT"){const c=C(t.dataset.c);if(f==="iso"){c.iso=t.value;c.pops=defaultPops(t.value)}else if(f==="pop0"||f==="pop1")c.pops[+f.slice(3)]=t.value;else c[f]=t.value;draw()}
+      if(t.dataset.k&&t.tagName==="SELECT"){K(t.dataset.k)[f]=t.value;draw()}
+      if(t.dataset.ctry){const k=K(t.dataset.k);k.countries=t.checked?[...k.countries,t.dataset.ctry]:k.countries.filter(x=>x!==t.dataset.ctry);draw()}
+      };
+    rt.onclick=e=>{const b=e.target.closest("button");if(!b)return;const d=b.dataset;
+      if(b.id==="addc"){S.connectors.push(newSite());draw()}
+      else if(b.id==="addk"&&S.connectors.length>=2){S.clusters.push({id:newId("k"),name:`Cluster ${S.clusters.length+1}`,mode:optDef("cluster mode"),scope:"all",countries:[],members:S.connectors.slice(0,2).map(c=>c.id)});draw()}
+      else if(d.del){S.connectors=S.connectors.filter(c=>c.id!==d.del);syncConnectors();draw()}
+      else if(d.kdel){S.clusters=S.clusters.filter(k=>k.id!==d.kdel);draw()}
+      else if(d.up||d.down){const [k,i]=(d.up||d.down).split(":"),m=K(k).members,j=+i+(d.up?-1:1);[m[i],m[j]]=[m[j],m[i]];draw()}
+      else if(d.out){const [k,id]=d.out.split(":");K(k).members=K(k).members.filter(x=>x!==id);draw()}
+      else if(d.in){const [k,id]=d.in.split(":");K(k).members.push(id);draw()}};
+  }
+  draw();
+}
+
+// ================= Order flow =================
+const SOLUTIONS=[
+  {id:"gsip",name:"GSIP",tag:"Domestic voice",note:"Pure domestic SIP voice, with no collaboration platform attached.",variants:null},
+  {id:"ms",name:"Microsoft powered solutions",tag:"Teams Phone",note:"PSTN calling into Microsoft Teams: Operator Connect, Direct Routing as a Service, or the best of both by country.",variants:["Operator Connect","Direct Routing as a Service","Best of both (by country)"]},
+  {id:"cisco",name:"Cisco collaboration solutions",tag:"Webex or on-prem",note:"Calling for Webex or on-premises Cisco.",variants:["Webex Calling","On-premises Cisco"]},
+  {id:"zoom",name:"Zoom powered solutions",tag:"Zoom Phone",note:"PSTN calling into Zoom Phone.",variants:null}
+];
+const STEPS=[["Solution","GSIP, Microsoft, Cisco or Zoom."],["Plan","Connection type and service plan."],["Countries","Where the customer needs service."],
+  ["Quantities","Numbers, channels, users and sites per country."],["Summary","Plan, quantities and quotation."],["Equipment","SBCs, ATAs and other add-ons."],["Connectors and routing","Customer sites, Tata PoPs and failover clusters."],["Delivery team","Day 1 project team and Day 2 support."],
+  ["Company and contact","Who the quote is for."],["Quotation","The final quote, linked to the customer."],["Order and provisioning","Orchestration layer sends the order to each vendor."]];
+const LAST_BUILT=9;
+const S={step:0,sol:null,variant:null,plan:null,picked:new Set(),qty:{},addons:{},team:{},sdm:{},cust:EMPTY_CUST(),regions:{},conn:{},connectors:[],clusters:[]};
+const picked=S.picked;
+const sol=()=>SOLUTIONS.find(x=>x.id===S.sol);
+const HYBRID="Best of both (by country)",CONN=["Operator Connect","Direct Routing as a Service"];
+const isHybrid=()=>S.sol==="ms"&&S.variant===HYBRID;
+// Connection used in a country: the chosen option, or for "best of both" the per-country choice (Operator Connect by default).
+const connFor=iso=>isHybrid()?((S.conn||{})[iso]||CONN[0]):S.variant;
+const plans=()=>DATA&&DATA.PLANS[S.sol];
+const country=iso=>DATA.COUNTRIES.find(c=>c.iso===iso);
+const qtyOf=iso=>S.qty[iso]||(S.qty[iso]={numbers:10,channels:4,users:10,sites:1});
+const band=(n,t)=>(t.find(([max])=>n<=max)||[0,0])[1];
+
+function renderRail(){
+  $("rail").innerHTML=STEPS.map(([t,d],i)=>`<li class="${i===S.step?"now":i<S.step?"past":""}"><div class="dot">${i<S.step?"✓":i+1}</div><div><strong>${t}</strong><span class="d">${d}</span></div></li>`).join("");
+}
+function renderStep(){
+  renderRail();
+  $("o-eyebrow").textContent=`Build your order · Step ${S.step+1} of ${STEPS.length}`;
+  $("back").hidden=S.step===0;
+  $("next").textContent=S.step===LAST_BUILT?"Place order":`Continue to ${STEPS[S.step+1][0].toLowerCase()}`;
+  if(!DATA){$("o-title").textContent=dataErr?"The data files couldn't be read":"Loading data files";
+    $("o-lede").textContent=dataErr?dataErr:"Reading plans, countries and the price book.";$("o-body").innerHTML=dataErr?`<div class="todo">Open <a href="#data">Data files</a> to check or replace the Excel files.</div>`:"";update();return}
+  [stepSolution,stepPlan,stepCountries,stepQuantities,stepSummary,stepAddons,stepRouting,stepTeam,stepCustomer,stepQuote][S.step]();
+  update();
+}
+function stepSolution(){
+  $("o-title").textContent="What would you like to order?";
+  $("o-lede").textContent="Choose the type of voice solution. We'll show the plans and countries available for it.";
+  $("o-body").innerHTML=`<div class="section"><div class="vendors sol">${SOLUTIONS.map(x=>`<button class="vendor" data-id="${x.id}" aria-pressed="${S.sol===x.id}"><span class="eyebrow">${x.tag}</span><b>${x.name}</b><small>${x.note}</small>${x.variants?`<small class="vars">${x.variants.length} connection options</small>`:""}</button>`).join("")}</div></div>`;
+  $("o-body").querySelectorAll(".vendor").forEach(b=>b.onclick=()=>{if(S.sol!==b.dataset.id){S.sol=b.dataset.id;S.variant=null;S.plan=null}renderStep()});
+}
+function stepPlan(){
+  const s=sol(), P=plans();
+  $("o-title").textContent=s.name;
+  $("o-lede").textContent=P?"Pick how you connect, then the plan that fits. Prices are per month (MRC) and one time (NRC).":s.id==="gsip"?"GSIP has no service plan. It's priced from the GSIP price book: numbers, channels and a setup charge per country.":"Pick how you connect.";
+  let h="";
+  if(s.variants)h+=`<div class="section"><h3>How will you connect?</h3><div class="seg" role="radiogroup">${s.variants.map(v=>`<button role="radio" aria-checked="${S.variant===v}" data-v="${v}">${v}</button>`).join("")}</div></div>`;
+  if(P){
+    const on=i=>S.plan===i?" on":"";
+    h+=`<div class="section"><h3>Choose a plan</h3><div class="tbl"><table class="plans"><thead><tr><th></th>${P.names.map((n,i)=>`<th class="pc${on(i)}"><button class="pick" data-p="${i}" aria-pressed="${S.plan===i}">${esc(n)}</button></th>`).join("")}</tr></thead><tbody>
+      ${P.features.map(([f,...v])=>`<tr><td>${esc(f)}</td>${v.map((x,i)=>`<td class="pc${on(i)}">${x?'<span class="yes">Included</span>':'<span class="no">Not included</span>'}</td>`).join("")}</tr>`).join("")}
+      ${[["Per user per month (MRC)","userMRC"],["Per user one time (NRC)","userNRC"],["Per site per month (MRC)","siteMRC"],["Per site one time (NRC)","siteNRC"]].map(([l,k])=>`<tr class="price"><td>${l}</td>${P[k].map((x,i)=>`<td class="pc${on(i)}">${money(x)}</td>`).join("")}</tr>`).join("")}
+      </tbody></table></div>${S.sol==="ms"&&P.india?`<p class="fine">India on Operator Connect adds a special SKU of ${money(P.india)} per India user per month, on top of the plan price.</p>`:""}</div>`;
+  } else if(s.id==="zoom") h+=`<div class="todo">Zoom plans aren't in the data files yet. Add a Zoom sheet and they'll appear here. You can still continue; PSTN charges come from the GSIP price book.</div>`;
+  $("o-body").innerHTML=h;
+  $("o-body").querySelectorAll("[data-v]").forEach(b=>b.onclick=()=>{S.variant=b.dataset.v;renderStep()});
+  $("o-body").querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>{S.plan=+b.dataset.p;renderStep()});
+}
+function stepCountries(){
+  $("o-title").textContent="Where do you need service?";
+  $("o-lede").textContent=`${DATA.COUNTRIES.length} countries from the Domestic Voice ANR file. Pick every country in this order.`;
+  $("o-body").innerHTML=`<div class="section"><input class="search" id="q" type="search" placeholder="Search countries" aria-label="Search countries"><div class="countries" id="countries"></div>
+    <p class="fine">Porting: <span class="pt yes">Yes</span> numbers can be ported in, <span class="pt partial">Partial</span> check first, <span class="pt no">No</span> new numbers only.</p></div>`;
+  $("q").oninput=renderCountries; renderCountries();
+}
+function renderCountries(){
+  const q=$("q").value.trim().toLowerCase();
+  $("countries").innerHTML=DATA.COUNTRIES.filter(c=>c.name.toLowerCase().includes(q)||c.iso.toLowerCase()===q).map(c=>
+    `<label class="country"><input type="checkbox" id="c-${c.iso}" value="${c.iso}" ${picked.has(c.iso)?"checked":""}> <span class="cn">${esc(c.name)}</span><span class="pt ${c.portable}" title="Porting: ${esc(c.port)}">${c.portable==="yes"?"Port":c.portable==="no"?"New":"Check"}</span><code>${esc(c.dial)}</code></label>`).join("")||'<p class="empty">No country matches that search.</p>';
+  $("countries").querySelectorAll("input").forEach(i=>i.onchange=()=>{i.checked?picked.add(i.value):picked.delete(i.value);update()});
+}
+function stepQuantities(){
+  $("o-title").textContent="How much does the customer need in each country?";
+  $("o-lede").textContent="For each country: how many phone numbers, how many concurrent call channels across those numbers, how many users, and how many sites.";
+  const isos=[...picked];
+  $("o-body").innerHTML=`<div class="section"><div class="tbl"><table class="qty"><thead><tr><th>Country</th>${isHybrid()?"<th>Connection</th>":""}<th>Numbers</th><th>Channels</th><th>Users</th><th>Sites</th><th></th></tr></thead><tbody>
+    ${isos.map(iso=>{const c=country(iso),q=qtyOf(iso);return `<tr data-iso="${iso}"><td><b>${esc(c.name)}</b><small>${esc(c.dial)}</small></td>${isHybrid()?`<td><select data-conn="${iso}" id="cn-${iso}" aria-label="Connection in ${esc(c.name)}">${CONN.map(o=>`<option${connFor(iso)===o?" selected":""}>${o}</option>`).join("")}</select></td>`:""}
+      ${["numbers","channels","users","sites"].map(k=>`<td><input type="number" min="0" id="q-${iso}-${k}" data-k="${k}" value="${q[k]}" aria-label="${k} in ${esc(c.name)}"></td>`).join("")}
+      <td><button class="act" data-info="${iso}" aria-expanded="false">Rules</button></td></tr>
+      <tr class="warnrow" id="w-${iso}" hidden><td colspan="${isHybrid()?7:6}"></td></tr>
+      <tr class="info" id="i-${iso}" hidden><td colspan="${isHybrid()?7:6}"><dl>
+        <dt>Number range</dt><dd>${esc(c.range)}</dd><dt>Porting</dt><dd>${esc(c.port)}</dd><dt>Restrictions</dt><dd>${esc(c.restr)}</dd>
+        <dt>New number documents</dt><dd>${esc(c.newDocs)}</dd><dt>Porting documents</dt><dd>${esc(c.portDocs)}</dd></dl></td></tr>`}).join("")}
+    </tbody><tfoot><tr id="qtot"></tr></tfoot></table></div></div>`;
+  $("o-body").querySelectorAll("input[data-k]").forEach(i=>i.oninput=()=>{const iso=i.closest("tr").dataset.iso;qtyOf(iso)[i.dataset.k]=Math.max(0,Math.floor(+i.value||0));qtyChecks();update()});
+  $("o-body").querySelectorAll("[data-conn]").forEach(sel=>sel.onchange=()=>{(S.conn=S.conn||{})[sel.dataset.conn]=sel.value;update()});
+  $("o-body").querySelectorAll("[data-info]").forEach(b=>b.onclick=()=>{const r=$("i-"+b.dataset.info);r.hidden=!r.hidden;b.setAttribute("aria-expanded",!r.hidden)});
+  qtyChecks();
+}
+function totals(){const t={numbers:0,channels:0,users:0,sites:0};[...picked].forEach(iso=>{const q=qtyOf(iso);for(const k in t)t[k]+=q[k]});return t}
+function qtyChecks(){
+  [...picked].forEach(iso=>{const q=qtyOf(iso),c=country(iso),w=[];
+    if(q.channels>q.numbers&&q.numbers>0)w.push("More channels than numbers. Usually numbers are equal to or greater than channels.");
+    if(q.numbers===0&&q.channels===0)w.push("No numbers or channels yet.");
+    if(c.portable==="no")w.push("Porting isn't available here, so all numbers will be new.");
+    const r=$("w-"+iso); if(r){r.hidden=!w.length;r.firstElementChild.textContent=w.join(" ")}});
+  const t=totals(); if($("qtot"))$("qtot").innerHTML=`<td>Total, ${picked.size} ${picked.size===1?"country":"countries"}</td>${isHybrid()?"<td></td>":""}${["numbers","channels","users","sites"].map(k=>`<td>${int(t[k])}</td>`).join("")}<td></td>`;
+}
+function price(){
+  const P=plans(), p=S.plan, t=totals(), rows=[], hasPlan=P&&p!=null;
+  const du=hasPlan?band(t.users,DATA.DISC.user):0, ds=hasPlan?band(t.sites,DATA.DISC.site):0;
+  const L={numMRC:0,chMRC:0,numNRC:0,chNRC:0,setup:0,userMRC:0,siteMRC:0,userNRC:0,siteNRC:0,indiaMRC:0};
+  [...picked].forEach(iso=>{const c=country(iso),q=qtyOf(iso),r=c.rates||{numNRC:0,numMRC:0,chNRC:0,chMRC:0,setup:0};
+    const india=hasPlan&&S.sol==="ms"&&connFor(iso)==="Operator Connect"&&iso==="IN"&&P.india;
+    const uRate=hasPlan?P.userMRC[p]:0;
+    const x={numMRC:q.numbers*r.numMRC,chMRC:q.channels*r.chMRC,numNRC:q.numbers*r.numNRC,chNRC:q.channels*r.chNRC,setup:r.setup,
+      userMRC:hasPlan?q.users*uRate*(1-du):0,siteMRC:hasPlan?q.sites*P.siteMRC[p]*(1-ds):0,userNRC:hasPlan?q.users*P.userNRC[p]:0,siteNRC:hasPlan?q.sites*P.siteNRC[p]:0,indiaMRC:india?q.users*P.india:0};
+    for(const k in L)L[k]+=x[k];
+    rows.push({c,q,india,indiaMRC:x.indiaMRC,conn:connFor(iso),missing:!c.rates,mrc:x.numMRC+x.chMRC+x.userMRC+x.siteMRC,nrc:x.numNRC+x.chNRC+x.setup+x.userNRC+x.siteNRC})});
+  return {rows,L,t,du,ds,hasPlan,mrc:rows.reduce((a,r)=>a+r.mrc+r.indiaMRC,0),nrc:rows.reduce((a,r)=>a+r.nrc,0)};
+}
+function bandLabel(n,t,unit){const i=t.findIndex(([max])=>n<=max);const lo=i<=0?1:t[i-1][0]+1,hi=t[i][0];return hi===Infinity?`${int(lo)}+ ${unit}`:`${int(lo)} to ${int(hi)} ${unit}`}
+function planPanel(){
+  const s=sol(),P=plans();
+  if(!P||S.plan==null)return `<div class="section"><h3>Your solution</h3><p class="fine">${s.id==="gsip"?"GSIP domestic voice, priced from the GSIP price book (numbers, channels and a setup charge per country).":"Plans for this solution aren't in the data files yet, so only PSTN charges are shown."}</p></div>`;
+  const inc=P.features.filter(f=>f[S.plan+1]),exc=P.features.filter(f=>!f[S.plan+1]);
+  return `<div class="section"><h3>What's in the ${esc(P.names[S.plan])} plan</h3><div class="feat"><ul class="inc">${inc.map(f=>`<li>${esc(f[0])}</li>`).join("")}</ul>${exc.length?`<ul class="exc">${exc.map(f=>`<li>${esc(f[0])}</li>`).join("")}</ul>`:""}</div></div>`;
+}
+function quoteLines(R){
+  const P=plans(),p=S.plan,L=R.L,out=[];
+  out.push({item:"Phone numbers",src:"GSIP price book, rate per country",qty:R.t.numbers,list:null,unit:null,mrc:L.numMRC,nrc:L.numNRC});
+  out.push({item:"Channels",src:"GSIP price book, rate per country",qty:R.t.channels,list:null,unit:null,mrc:L.chMRC,nrc:L.chNRC});
+  out.push({item:"New country setup",src:"GSIP price book",qty:picked.size,list:null,unit:null,mrc:0,nrc:L.setup});
+  if(R.hasPlan){
+    out.push({item:`${P.names[p]} plan, per user`,src:R.du?`${R.du*100}% discount, ${bandLabel(R.t.users,DATA.DISC.user,"users")}`:`No discount at ${int(R.t.users)} users`,qty:R.t.users,list:P.userMRC[p],unit:P.userMRC[p]*(1-R.du),mrc:L.userMRC,nrc:L.userNRC,nrcUnit:P.userNRC[p]});
+    out.push({item:`${P.names[p]} plan, per site`,src:R.ds?`${R.ds*100}% discount, ${bandLabel(R.t.sites,DATA.DISC.site,"sites")}`:`No discount at ${int(R.t.sites)} sites`,qty:R.t.sites,list:P.siteMRC[p],unit:P.siteMRC[p]*(1-R.ds),mrc:L.siteMRC,nrc:L.siteNRC,nrcUnit:P.siteNRC[p]});
+    if(L.indiaMRC)out.push({item:"India OC special SKU",src:"Added for India users, not discounted",qty:qtyOf("IN").users,list:P.india,unit:P.india,mrc:L.indiaMRC,nrc:0});
+  }
+  return out;
+}
+function linesTable(lines,tot){
+  return `<div class="tbl"><table class="lines"><thead><tr><th>Item</th><th>Qty</th><th>List price</th><th>Your price</th><th>Monthly</th><th>One time</th></tr></thead><tbody>
+    ${lines.map(l=>`<tr><td><b>${esc(l.item)}</b><small>${esc(l.src)}</small></td><td>${int(l.qty)}</td><td>${l.list==null?"–":money(l.list)}</td><td>${l.unit==null?"–":(l.unit<l.list?`<span class="disc">${umoney(l.unit)}</span>`:umoney(l.unit))}</td><td>${money(l.mrc)}</td><td>${money(l.nrc)}</td></tr>`).join("")}
+    </tbody><tfoot><tr><td>Total</td><td></td><td></td><td></td><td>${money(tot.mrc)}</td><td>${money(tot.nrc)}</td></tr></tfoot></table></div>`;
+}
+function stepSummary(){
+  const s=sol(),P=plans(),R=price();
+  $("o-title").textContent="Order summary";
+  $("o-lede").textContent=[s.name,S.variant,R.hasPlan?P.names[S.plan]+" plan":null].filter(Boolean).join(" · ");
+  $("o-body").innerHTML=`
+    <div class="stats sum">${[["Countries",picked.size],["Numbers",R.t.numbers],["Channels",R.t.channels],["Users",R.t.users],["Sites",R.t.sites]].map(([l,n])=>`<div class="stat"><b>${int(n)}</b><span>${l}</span></div>`).join("")}</div>
+    ${planPanel()}
+    <div class="section"><h3>Countries and quantities</h3><div class="tbl"><table class="sumt"><thead><tr><th>Country</th><th>Numbers</th><th>Channels</th><th>Users</th><th>Sites</th><th>Monthly</th><th>One time</th></tr></thead><tbody>
+      ${R.rows.map(r=>`<tr><td>${esc(r.c.name)}${isHybrid()?`<small>${esc(r.conn)}</small>`:""}${r.missing?' <span class="pill warn">no rates</span>':""}</td><td>${int(r.q.numbers)}</td><td>${int(r.q.channels)}</td><td>${int(r.q.users)}</td><td>${int(r.q.sites)}</td><td>${money(r.mrc)}</td><td>${money(r.nrc)}</td></tr>${r.india?`<tr class="subrow"><td>India OC special SKU<small>${int(r.q.users)} India users × ${money(P.india)} per month</small></td><td></td><td></td><td>${int(r.q.users)}</td><td></td><td>${money(r.indiaMRC)}</td><td>${money(0)}</td></tr>`:""}`).join("")}
+      </tbody><tfoot><tr><td>Total</td><td>${int(R.t.numbers)}</td><td>${int(R.t.channels)}</td><td>${int(R.t.users)}</td><td>${int(R.t.sites)}</td><td>${money(R.mrc)}</td><td>${money(R.nrc)}</td></tr></tfoot></table></div></div>
+    <div class="section est"><h3>Quotation</h3>${linesTable(quoteLines(R),R)}
+      <div class="grand"><div><span>Total monthly (MRC)</span><b>${money(R.mrc)}</b></div><div><span>Total one time (NRC)</span><b>${money(R.nrc)}</b></div></div>
+      <p class="fine">Volume discounts use the total users and sites across all countries and apply to monthly plan charges only. Call charges below are billed per minute on top. You can add equipment such as SBCs and ATAs in the next step.</p></div>
+    <div class="section"><h3>Domestic termination rates <span class="sample">per minute</span></h3><p class="fine">For calls made within each selected country. From the Domestic Rates sheet of the GSIP price book.</p>
+      <div class="tbl"><table class="rates"><thead><tr><th>Country</th><th>Fixed</th><th>Mobile</th><th>Special</th></tr></thead><tbody>
+      ${R.rows.map(r=>`<tr><td>${esc(r.c.name)}</td>${r.c.dom?["fixed","mobile","special"].map(k=>`<td>${rate(r.c.dom[k])}</td>`).join(""):'<td colspan="3"><span class="pill warn">no domestic rates</span></td>'}</tr>`).join("")}
+      </tbody></table></div></div>
+    <div class="section"><h3>International termination rates (A to Z) <span class="sample">per minute</span></h3><p class="fine">Lets the customer call any destination worldwide. All ${int(DATA.AZ.length)} lines from the International AtoZ Rates sheet are included with this quote.</p>
+      <input class="search" id="azq" type="search" placeholder="Search by country, destination or prefix" aria-label="Search international rates">
+      <div class="tbl azbox"><table class="rates"><thead><tr><th>Country</th><th>Destination</th><th>Prefix</th><th>Rate</th><th>Increment</th><th>Route type</th></tr></thead><tbody id="azb"></tbody></table></div></div>`;
+  const drawAZ=()=>{const q=$("azq").value.trim().toLowerCase();const list=DATA.AZ.filter(a=>!q||a.country.toLowerCase().includes(q)||a.dest.toLowerCase().includes(q)||a.prefix.startsWith(q));
+    $("azb").innerHTML=list.map(a=>`<tr><td>${esc(a.country)}</td><td>${esc(a.dest)}</td><td class="ref">${esc(a.prefix)}</td><td>${rate(a.rate)}</td><td>${esc(a.inc)}</td><td>${esc(a.route)}</td></tr>`).join("")||'<tr><td colspan="6" class="empty">No destination matches that search.</td></tr>'};
+  $("azq").oninput=drawAZ;drawAZ();
+}
+// ---- Equipment and add-ons (from the SKU sheet) ----
+const PLATFORM_FOR={ms:/teams/i,cisco:/webex/i,zoom:/zoom/i};
+function skuAvailable(k){
+  if(/platform connection/i.test(k.cat)){const re=PLATFORM_FOR[S.sol];if(!re||!re.test(k.name))return {show:false}}
+  if(/all/i.test(k.tier)||!k.tier)return {show:true,ok:true};
+  const P=plans(),pn=P&&S.plan!=null?P.names[S.plan]:"";
+  const ok=!!pn&&(k.tier.toLowerCase().includes(pn.toLowerCase())||(pn==="Standard"&&/control/i.test(k.tier)));
+  return {show:true,ok,why:`Only on ${k.tier} plans`};
+}
+function addonTotals(){
+  const t={mrc:0,nrc:0,annual:0,lines:[]};
+  DATA.EQUIP.forEach(k=>{const q=S.addons[k.code]||0;if(!q)return;const a=skuAvailable(k);if(!a.show||!a.ok)return;
+    const amt=q*k.price, ct=/annual|year/i.test(k.charge)?"annual":/nrc|one/i.test(k.charge)?"nrc":"mrc";t[ct]+=amt;t.lines.push({k,q,amt,ct})});
+  return t;
+}
+// ---- Equipment business rules ----
+// 1. Cloud SBC sessions are split by region; each region with sessions is one SBC instance.
+//    Session packs = sessions per region rounded up to packs of 10. Onboarding/setup = one per instance.
+// 2. ATA installation can't be lower than the number of ATA devices.
+// 3. On-prem SBC lifecycle bundle (install, AMC, support, management) can't be lower than the number of on-prem SBC appliances.
+const REGIONS=["APAC","EMEA","Americas"];
+const skuBy=re=>DATA.EQUIP.find(k=>re.test(k.code));
+const skusBy=re=>DATA.EQUIP.filter(k=>re.test(k.code));
+function ruleState(){
+  const reg=S.regions||{},sessions=REGIONS.reduce((t,r)=>t+(+reg[r]||0),0);
+  const instances=REGIONS.filter(r=>(+reg[r]||0)>0).length;
+  const packs=REGIONS.reduce((t,r)=>t+Math.ceil((+reg[r]||0)/10),0);
+  const atas=skusBy(/^TC-UC-ATA-HW/).reduce((t,k)=>t+(S.addons[k.code]||0),0);
+  const osbc=skusBy(/^TC-UC-OSBC-HW/).reduce((t,k)=>t+(S.addons[k.code]||0),0);
+  return {sessions,instances,packs,atas,osbc};
+}
+function rulesFor(){
+  const st=ruleState(),r=[],ses=skuBy(/CSBC-SES/),inst=skuBy(/CSBC-INST/),ataI=skuBy(/ATA-INST/),lcs=skuBy(/OSBC-LCS/);
+  const ess=skuBy(/CSBC-ESS/);
+  if(ess)r.push({code:ess.code,exact:st.sessions,why:`Total sessions across APAC, EMEA and Americas (${int(st.sessions)})`});
+  if(ses)r.push({code:ses.code,exact:st.packs,why:`${int(st.sessions)} sessions across ${st.instances} region${st.instances===1?"":"s"}, rounded up to packs of 10 per region`});
+  if(inst)r.push({code:inst.code,exact:st.instances,why:`One setup per regional SBC instance (${st.instances})`});
+  if(ataI)r.push({code:ataI.code,min:st.atas,why:`At least one installation per ATA (${st.atas} ATA${st.atas===1?"":"s"})`});
+  if(lcs)r.push({code:lcs.code,min:st.osbc,why:`At least one lifecycle bundle per on-prem SBC (${st.osbc})`});
+  return r;
+}
+function applyRules(){rulesFor().forEach(x=>{const cur=S.addons[x.code]||0;S.addons[x.code]=x.exact!=null?x.exact:Math.max(cur,x.min)})}
+function stepAddons(){
+  S.regions=S.regions||{};applyRules();
+  $("o-title").textContent="Would you like to add equipment?";
+  $("o-lede").textContent="Optional. Add cloud or on-premises SBCs, ATAs, support and connection services. Prices come from the SKU sheet. Some quantities are set by business rules, shown below each item.";
+  const R=price(),cats=[...new Set(DATA.EQUIP.map(k=>k.cat))];
+  const helper=k=>/per user/i.test(k.uom)&&!/CSBC-ESS/.test(k.code)?`<button class="act" data-fill="${k.code}" data-v="${R.t.users}">Match users (${int(R.t.users)})</button>`:/per tenant/i.test(k.uom)&&!/CSBC-INST/.test(k.code)?`<button class="act" data-fill="${k.code}" data-v="1">Add 1</button>`:"";
+  const regionPanel=`<div class="regions"><div><b>Cloud SBC sessions by region</b><p class="fine">How many concurrent sessions does the customer need in each region? Each region with sessions gets its own SBC instance.</p></div>
+    <div class="regf">${REGIONS.map(r=>`<label class="fld" for="rg-${r}"><span>${r}</span><input type="number" min="0" id="rg-${r}" data-region="${r}" value="${S.regions[r]||0}"></label>`).join("")}</div><p class="fine" id="regsum"></p></div>`;
+  $("o-body").innerHTML=cats.map(cat=>{const items=DATA.EQUIP.filter(k=>k.cat===cat).map(k=>({k,a:skuAvailable(k)})).filter(x=>x.a.show);if(!items.length)return"";
+    return `<div class="section"><h3>${esc(cat)}</h3>${/cloud sbc/i.test(cat)?regionPanel:""}<div class="skus">${items.map(({k,a})=>`<div class="sku${a.ok?"":" off"}${S.addons[k.code]?" on":""}" data-card="${k.code}">
+      <div class="skuh"><div><b>${esc(k.name)}</b><code>${esc(k.code)}</code></div><div class="skup"><b>${money(k.price)}</b><small>${esc(k.uom)} · ${esc(k.charge)}</small></div></div>
+      <p>${esc(k.desc)}</p>
+      <div class="skuf"><small>${k.term?`Minimum term ${esc(k.term)}`:""}${a.ok?"":` · ${esc(a.why)}`}</small>
+      <span class="skuq">${a.ok?helper(k):""}<label for="a-${k.code}" class="vh">Quantity of ${esc(k.name)}</label><input type="number" min="0" id="a-${k.code}" data-sku="${k.code}" value="${S.addons[k.code]||0}" ${a.ok?"":"disabled"}></span></div>
+      <div class="rule" id="r-${k.code}" hidden></div></div>`).join("")}</div></div>`}).join("")+
+    `<div class="section est" id="addtot"></div>`;
+  const draw=()=>{
+    applyRules();
+    const rules=rulesFor(),st=ruleState();
+    rules.forEach(x=>{const i=$("a-"+x.code),box=$("r-"+x.code);if(!i)return;const exact=x.exact!=null;
+      i.readOnly=exact;i.min=exact?x.exact:x.min;if(+i.value!==S.addons[x.code])i.value=S.addons[x.code];
+      box.hidden=!(exact?true:x.min>0);box.textContent=(exact?"Set by rule: ":"Rule: minimum "+x.min+". ")+x.why+".";
+      i.closest(".sku").classList.toggle("on",!!S.addons[x.code])});
+    if($("regsum"))$("regsum").textContent=st.sessions?`${int(st.sessions)} sessions: Cloud SBC Essential × ${int(st.sessions)}, ${st.packs} session pack${st.packs===1?"":"s"} and ${st.instances} setup charge${st.instances===1?"":"s"} (one per regional instance) added automatically.`:"No sessions yet.";
+    const A=addonTotals();
+    $("addtot").innerHTML=`<h3>Updated quote</h3><div class="tbl"><table class="estt"><thead><tr><th>Charge</th><th>Monthly</th><th>One time</th><th>Annual</th></tr></thead><tbody>
+      <tr><td>Plan, numbers and channels (from summary)</td><td>${money(R.mrc)}</td><td>${money(R.nrc)}</td><td>–</td></tr>
+      ${A.lines.map(l=>`<tr><td>${esc(l.k.name)} × ${int(l.q)}</td><td>${l.ct==="mrc"?money(l.amt):""}</td><td>${l.ct==="nrc"?money(l.amt):""}</td><td>${l.ct==="annual"?money(l.amt):""}</td></tr>`).join("")}
+      <tr class="tot"><td>Total</td><td>${money(R.mrc+A.mrc)}</td><td>${money(R.nrc+A.nrc)}</td><td>${money(A.annual)}</td></tr></tbody></table></div>
+      <p class="fine">${A.lines.length?`${A.lines.length} add-on${A.lines.length>1?"s":""} selected.`:"No add-ons selected. That's fine, you can continue without them."}</p>`};
+  $("o-body").querySelectorAll("input[data-sku]").forEach(i=>{i.oninput=()=>{S.addons[i.dataset.sku]=Math.max(0,Math.floor(+i.value||0));i.closest(".sku").classList.toggle("on",!!S.addons[i.dataset.sku]);draw()};
+    i.onchange=()=>{i.value=S.addons[i.dataset.sku]||0}});
+  $("o-body").querySelectorAll("[data-region]").forEach(i=>i.oninput=()=>{S.regions[i.dataset.region]=Math.max(0,Math.floor(+i.value||0));draw()});
+  $("o-body").querySelectorAll("[data-fill]").forEach(b=>b.onclick=()=>{const i=$("a-"+b.dataset.fill);i.value=b.dataset.v;i.oninput()});
+  draw();
+}
+// ---- Delivery team: Day 1 professional services and Day 2 support (from the Delivery Team sheet) ----
+function parseTeam(rows){
+  const out={day1:[],day2:[]};let sec=null,H=null;
+  for(const r of rows){
+    const a=txt(r[0]);
+    if(/^day\s*1/i.test(a)){sec="day1";H=null;continue}
+    if(/^day\s*2/i.test(a)){sec="day2";H=r.map(txt);continue}
+    if(/^term$/i.test(a)){H=r.map(txt);continue}
+    if(!sec||!H||!a)continue;
+    const col=re=>H.findIndex(h=>re.test(h));
+    const ns=a.match(/\d+/g)||[];const lo=ns.length?+ns[0]:0,hi=/plus|\+/i.test(a)||ns.length<2?(/contract/i.test(a)?Infinity:(ns.length?Infinity:Infinity)):+ns[1];
+    const avail={};H.forEach((h,i)=>{const m=h.match(/^(\w+)\s+plan$/i);if(m)avail[m[1].toLowerCase()]=/^available/i.test(txt(r[i]))});
+    const rv=r[col(/rate/i)];
+    out[sec].push({band:a,lo,hi,role:txt(r[col(/personal|personnel|role/i)]),type:txt(r[col(/^type/i)]),rate:typeof rv==="number"?rv:num(rv),rateText:typeof rv==="number"?null:txt(rv),freq:txt(r[col(/frequency/i)]),avail});
+  }
+  if(!out.day1.length&&!out.day2.length)throw new Error("Delivery team sheet: no Day 1 or Day 2 rows found");
+  return out;
+}
+const teamKey=x=>x.role+" | "+x.type;
+function planTier(){const P=plans();if(!P||S.plan==null)return "essential";const n=P.names[S.plan].toLowerCase();return n==="standard"?"control":n}
+function day1Roles(){const m=new Map();DATA.TEAM.day1.forEach(x=>{const k=teamKey(x);if(!m.has(k))m.set(k,{key:k,role:x.role,type:x.type,bands:[]});m.get(k).bands.push(x)});return [...m.values()]}
+function day1Cost(role,months){let total=0;const parts=[];
+  for(let i=0;i<months;i++){const b=role.bands.find(x=>i>=x.lo&&i<x.hi)||role.bands[role.bands.length-1];total+=b.rate;
+    const last=parts[parts.length-1];if(last&&last.b===b)last.n++;else parts.push({b,n:1})}
+  return {total,parts}}
+function teamTotals(){
+  const t={nrc:0,mrc:0,lines:[]},tier=planTier();
+  day1Roles().forEach(r=>{const m=S.team[r.key]||0;if(!m||!r.bands[0].avail[tier])return;const c=day1Cost(r,m);t.nrc+=c.total;t.lines.push({name:`${r.role} (${r.type}), ${m} month${m>1?"s":""}`,nrc:c.total,mrc:0})});
+  DATA.TEAM.day2.forEach(x=>{const q=S.sdm[teamKey(x)]||0;if(!q||!x.avail[tier])return;t.mrc+=q*x.rate;t.lines.push({name:`${x.role} (${x.type})${q>1?" × "+q:""}`,nrc:0,mrc:q*x.rate})});
+  return t;
+}
+function stepTeam(){
+  const tier=planTier(),P=plans(),pn=P&&S.plan!=null?P.names[S.plan]:null;
+  $("o-title").textContent="Who should support the customer?";
+  $("o-lede").textContent=`Day 1 is the project team that gets the customer live. Day 2 is support after go-live. Availability follows the ${pn?pn+" plan":"Essential plan level"}.`;
+  const roles=day1Roles();
+  roles.forEach(r=>{const b=r.bands[0];if(S.team[r.key]===undefined&&b.rateText&&b.avail[tier]&&b.hi!==Infinity)S.team[r.key]=b.hi});
+  $("o-body").innerHTML=`<div class="section"><h3>Day 1 project team</h3><p class="fine">Enter how many months each person is needed. Each month is charged at the rate for that period, so the first months of project management and porting help are free and are included by default. Anything beyond them is chargeable.</p>
+    <div class="tbl"><table class="team"><thead><tr><th>Role</th><th>Rates per month</th><th>Months</th><th>Cost</th></tr></thead><tbody>
+    ${roles.map(r=>{const ok=r.bands[0].avail[tier];return `<tr class="${ok?"":"off"}"><td><b>${esc(r.role)}</b><small>${esc(r.type)}${ok?"":` · not available on ${esc(pn||"this solution")}`}</small></td>
+      <td class="bands">${r.bands.map(b=>`<span>${esc(b.band.replace(/monts/i,"months"))}: <b>${b.rateText?esc(b.rateText):money(b.rate)}</b></span>`).join("")}</td>
+      <td><input type="number" min="0" id="t-${r.key.replace(/\W+/g,"-")}" data-team="${esc(r.key)}" value="${S.team[r.key]||0}" ${ok?"":"disabled"} aria-label="Months of ${esc(r.role)}, ${esc(r.type)}"></td>
+      <td class="tc" data-cost="${esc(r.key)}"></td></tr>`}).join("")}
+    </tbody></table></div></div>
+    <div class="section"><h3>Day 2 support</h3><p class="fine">Charged every month for the length of the contract.</p><div class="skus">
+    ${DATA.TEAM.day2.map(x=>{const k=teamKey(x),ok=x.avail[tier],inc=!!x.rateText;return `<div class="sku${ok?"":" off"}${S.sdm[k]||inc?" on":""}"><div class="skuh"><div><b>${esc(x.role.trim())}</b><code>${esc(x.type)}</code></div><div class="skup"><b>${inc?"Included":money(x.rate)}</b><small>${inc?esc(x.rateText):"per month"}</small></div></div>
+      ${inc?"":`<div class="skuf"><small>${ok?"Optional":"Not available on this plan"}</small><span class="skuq"><label class="vh" for="d-${k.replace(/\W+/g,"-")}">How many</label><input type="number" min="0" id="d-${k.replace(/\W+/g,"-")}" data-sdm="${esc(k)}" value="${S.sdm[k]||0}" ${ok?"":"disabled"}></span></div>`}</div>`}).join("")}
+    </div></div><div class="section est" id="teamtot"></div>`;
+  const draw=()=>{
+    roles.forEach(r=>{const el=$("o-body").querySelector(`[data-cost="${CSS.escape(r.key)}"]`);const m=S.team[r.key]||0;
+      if(!m||!r.bands[0].avail[tier]){el.innerHTML="–";return}const c=day1Cost(r,m);
+      el.innerHTML=`<b>${money(c.total)}</b><small>${c.parts.map(p=>`${p.n} × ${p.b.rateText?"free":money(p.b.rate)}`).join(" + ")}</small>`});
+    const R=price(),A=addonTotals(),T=teamTotals();
+    $("teamtot").innerHTML=`<h3>Full quote so far</h3><div class="tbl"><table class="estt"><thead><tr><th>Charge</th><th>Monthly</th><th>One time</th><th>Annual</th></tr></thead><tbody>
+      <tr><td>Plan, numbers and channels</td><td>${money(R.mrc)}</td><td>${money(R.nrc)}</td><td>–</td></tr>
+      <tr><td>Equipment and add-ons</td><td>${money(A.mrc)}</td><td>${money(A.nrc)}</td><td>${money(A.annual)}</td></tr>
+      ${T.lines.map(l=>`<tr><td>${esc(l.name)}</td><td>${l.mrc?money(l.mrc):""}</td><td>${l.nrc?money(l.nrc):""}</td><td></td></tr>`).join("")}
+      <tr class="tot"><td>Total</td><td>${money(R.mrc+A.mrc+T.mrc)}</td><td>${money(R.nrc+A.nrc+T.nrc)}</td><td>${money(A.annual)}</td></tr></tbody></table></div>
+      <p class="fine">Day 1 team costs are a one-time project charge (the sum of the monthly rates). Day 2 managers are added to the monthly charge.</p>`};
+  $("o-body").querySelectorAll("[data-team]").forEach(i=>i.oninput=()=>{S.team[i.dataset.team]=Math.max(0,Math.floor(+i.value||0));draw()});
+  $("o-body").querySelectorAll("[data-sdm]").forEach(i=>i.oninput=()=>{S.sdm[i.dataset.sdm]=Math.max(0,Math.floor(+i.value||0));i.closest(".sku").classList.toggle("on",!!S.sdm[i.dataset.sdm]);draw()});
+  draw();
+}
+// ---- Company and contact ----
+function EMPTY_CUST(){return {company:"",regNo:"",hq:"",industry:"",address:"",tenant:"",term:"36",pName:"",pRole:"",pEmail:"",pPhone:"",tName:"",tEmail:"",owner:"",entities:{}}}
+const TENANT_LABEL={ms:"Microsoft 365 tenant ID or domain",cisco:"Webex organisation ID",zoom:"Zoom account ID"};
+const emailOk=e=>/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+function custMissing(){const c=S.cust,m=[];
+  if(!c.company.trim())m.push("company name");if(!c.hq)m.push("headquarters country");if(!c.pName.trim())m.push("primary contact name");
+  if(!emailOk(c.pEmail))m.push("a valid primary contact email");if(c.tEmail&&!emailOk(c.tEmail))m.push("a valid technical contact email");return m}
+function stepCustomer(){
+  const c=S.cust,s=sol();
+  $("o-title").textContent="Who is this quote for?";
+  $("o-lede").textContent="These details appear on the final quotation and link it to the customer. Fields marked * are required.";
+  const f=(id,label,attrs="",req=false,type="text")=>`<label class="fld" for="cu-${id}"><span>${label}${req?" *":""}</span><input type="${type}" id="cu-${id}" data-f="${id}" value="${esc(c[id])}" ${attrs}></label>`;
+  const allCountries=[...new Set([...DATA.COUNTRIES.map(x=>x.name),"Other"])];
+  $("o-body").innerHTML=`
+    <div class="section"><h3>Company</h3><div class="form">
+      ${f("company","Registered company name","autocomplete=\"organization\"",true)}
+      ${f("regNo","Company registration or VAT number")}
+      <label class="fld" for="cu-hq"><span>Headquarters country *</span><select id="cu-hq" data-f="hq"><option value="">Choose a country</option>${allCountries.map(n=>`<option${c.hq===n?" selected":""}>${esc(n)}</option>`).join("")}</select></label>
+      <label class="fld" for="cu-industry"><span>Industry</span><select id="cu-industry" data-f="industry">${["","Financial services","Healthcare","Manufacturing","Retail","Technology","Public sector","Education","Professional services","Other"].map(n=>`<option value="${n}"${c.industry===n?" selected":""}>${n||"Choose an industry"}</option>`).join("")}</select></label>
+      <label class="fld wide" for="cu-address"><span>Registered address</span><textarea id="cu-address" data-f="address" rows="2">${esc(c.address)}</textarea></label>
+      ${TENANT_LABEL[s.id]?f("tenant",TENANT_LABEL[s.id]):""}
+      <label class="fld" for="cu-term"><span>Contract term</span><select id="cu-term" data-f="term">${["12","24","36","60"].map(n=>`<option value="${n}"${c.term===n?" selected":""}>${n} months</option>`).join("")}</select></label>
+    </div></div>
+    <div class="section"><h3>Contacts</h3><div class="form">
+      ${f("pName","Primary contact name","autocomplete=\"name\"",true)}${f("pRole","Job title")}
+      ${f("pEmail","Primary contact email","autocomplete=\"email\"",true,"email")}${f("pPhone","Phone","autocomplete=\"tel\"",false,"tel")}
+      ${f("tName","Technical contact name")}${f("tEmail","Technical contact email","",false,"email")}
+      ${f("owner","Account manager (your side)")}
+    </div></div>
+    <div class="section"><h3>Local entity in each country</h3><p class="fine">Most countries need numbers registered to a local business at an in-country address. Leave blank if it's the same as the company above.</p>
+      <div class="tbl"><table class="ent"><thead><tr><th>Country</th><th>Local legal entity</th><th>Service address</th></tr></thead><tbody>
+      ${[...picked].map(iso=>{const k=country(iso),e=c.entities[iso]||{};return `<tr><td><b>${esc(k.name)}</b><small>${esc(k.restr.split(";")[0])}</small></td>
+        <td><input id="ce-${iso}-name" data-e="${iso}" data-k="name" value="${esc(e.name||"")}" aria-label="Local entity in ${esc(k.name)}"></td>
+        <td><input id="ce-${iso}-addr" data-e="${iso}" data-k="addr" value="${esc(e.addr||"")}" aria-label="Service address in ${esc(k.name)}"></td></tr>`}).join("")}
+      </tbody></table></div></div>
+    <p class="fine" id="custmiss"></p>`;
+  const refresh=()=>{const m=custMissing();$("custmiss").textContent=m.length?"Still needed: "+m.join(", ")+".":"All required details are in.";update()};
+  $("o-body").querySelectorAll("[data-f]").forEach(i=>i.oninput=i.onchange=()=>{c[i.dataset.f]=i.value;refresh()});
+  $("o-body").querySelectorAll("[data-e]").forEach(i=>i.oninput=()=>{(c.entities[i.dataset.e]=c.entities[i.dataset.e]||{})[i.dataset.k]=i.value});
+  refresh();
+}
+// ---- Final quotation ----
+function stepQuote(){
+  const s=sol(),P=plans(),R=price(),A=addonTotals(),T=teamTotals(),c=S.cust,term=+c.term||36;
+  const today=new Date(),valid=new Date(today.getTime()+30*864e5),d=x=>x.toISOString().slice(0,10);
+  const mrc=R.mrc+A.mrc+T.mrc,nrc=R.nrc+A.nrc+T.nrc,ann=A.annual,tcv=mrc*term+nrc+ann*term/12;
+  $("o-title").textContent="Quotation";
+  $("o-lede").textContent=`${editing?editing:"Draft, not saved yet"} · prepared ${d(today)} · valid until ${d(valid)}`;
+  const block=(t,rows)=>rows.length?`<div class="section"><h3>${t}</h3><div class="tbl"><table class="lines"><thead><tr><th>Item</th><th>Qty</th><th>Unit</th><th>Monthly</th><th>One time</th><th>Annual</th></tr></thead><tbody>${rows.join("")}</tbody></table></div></div>`:"";
+  const row=(item,sub,qty,unit,m,n,a)=>`<tr><td><b>${esc(item)}</b>${sub?`<small>${esc(sub)}</small>`:""}</td><td>${qty==null?"":int(qty)}</td><td>${unit==null?"–":umoney(unit)}</td><td>${m?money(m):""}</td><td>${n?money(n):""}</td><td>${a?money(a):""}</td></tr>`;
+  $("o-body").innerHTML=`
+    <div class="dlbar"><span class="btn" role="button" tabindex="0" id="dlx">Download Excel quote</span><span class="fine">Summary tab with linked tabs for the plan, GSIP voice, AudioCodes equipment, professional services, customer and call rates.</span></div><div class="dsmsg" id="dlmsg"></div>
+    <div class="qhead"><div><div class="eyebrow">Prepared for</div><b>${esc(c.company)}</b><span>${esc([c.hq,c.regNo].filter(Boolean).join(" · "))}</span><span>${esc(c.address)}</span></div>
+      <div><div class="eyebrow">Contact</div><b>${esc(c.pName)}</b><span>${esc([c.pRole,c.pEmail,c.pPhone].filter(Boolean).join(" · "))}</span>${c.tName?`<span>Technical: ${esc(c.tName)}${c.tEmail?" · "+esc(c.tEmail):""}</span>`:""}</div>
+      <div><div class="eyebrow">Solution</div><b>${esc([s.name,S.variant].filter(Boolean).join(" · "))}</b><span>${R.hasPlan?esc(P.names[S.plan])+" plan · ":""}${term}-month term · USD</span>${c.tenant?`<span>${esc(TENANT_LABEL[s.id]||"Account")}: ${esc(c.tenant)}</span>`:""}</div></div>
+    ${block("Voice service and plan",quoteLines(R).map(l=>row(l.item,l.src,l.qty,l.unit,l.mrc,l.nrc,0)))}
+    ${block("Equipment and add-ons",A.lines.map(l=>row(l.k.name,l.k.code,l.q,l.k.price,l.ct==="mrc"?l.amt:0,l.ct==="nrc"?l.amt:0,l.ct==="annual"?l.amt:0)))}
+    ${block("Delivery team",T.lines.map(l=>row(l.name,l.mrc?"Day 2 support":"Day 1 project team",null,null,l.mrc,l.nrc,0)))}
+    <div class="grand four"><div><span>Monthly (MRC)</span><b>${money(mrc)}</b></div><div><span>One time (NRC)</span><b>${money(nrc)}</b></div><div><span>Annual</span><b>${money(ann)}</b></div><div><span>Total over ${term} months</span><b>${money(tcv)}</b></div></div>
+    <div class="section"><h3>Countries</h3><div class="tbl"><table class="sumt"><thead><tr><th>Country</th><th>Local entity</th><th>Numbers</th><th>Channels</th><th>Users</th><th>Sites</th></tr></thead><tbody>
+      ${R.rows.map(r=>{const e=c.entities[r.c.iso]||{};return `<tr><td>${esc(r.c.name)}</td><td>${esc(e.name||c.company)}${e.addr?`<small>${esc(e.addr)}</small>`:""}</td><td>${int(r.q.numbers)}</td><td>${int(r.q.channels)}</td><td>${int(r.q.users)}</td><td>${int(r.q.sites)}</td></tr>`}).join("")}</tbody></table></div></div>
+    ${routingQuoteHTML()}
+    <p class="fine">Call usage is charged per minute at the domestic and international (A to Z) rates shown on the summary step. Prices in USD, excluding taxes. Minimum terms apply as listed for each item. Prepared by ${esc(c.owner||"your account manager")}.</p>`;
+  keyBtn("dlx",downloadQuote);
+}
+// ---- Excel quotation (SheetJS) ----
+// Summary tab totals are formulas pointing at the detail tabs, and each summary row links to its tab.
+function xlSheet(rows,widths){
+  const ws={};let maxC=0;
+  rows.forEach((r,ri)=>(r||[]).forEach((v,ci)=>{if(v==null||v==="")return;maxC=Math.max(maxC,ci);
+    const cell=typeof v==="object"?{...v}:{v};if(!cell.t)cell.t=typeof cell.v==="number"?"n":"s";if(cell.f&&cell.v==null){cell.v=0;cell.t="n"}
+    if(cell.t==="n"&&!cell.z&&cell.money)cell.z='"$"#,##0.00';delete cell.money;ws[XLSX.utils.encode_cell({r:ri,c:ci})]=cell}));
+  ws["!ref"]=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:Math.max(rows.length-1,0),c:maxC}});
+  if(widths)ws["!cols"]=widths.map(w=>({wch:w}));
+  ws["!roles"]={};rows.forEach((r,ri)=>{if(r&&r.role)ws["!roles"][ri]=r.role});
+  return ws;
+}
+const H=a=>Object.assign(a,{role:"head"});        // marks a table header row for styling
+const $m=(v,f)=>({v,f,t:"n",money:true});           // money cell, optional formula
+const $n=(v,f)=>({v,f,t:"n"});
+const $p=v=>({v,t:"n",z:"0%"});
+const $r=v=>({v,t:"n",z:'"$"0.0000'});
+const link=(text,tab)=>({v:text,t:"s",l:{Target:`#'${tab}'!A1`,Tooltip:`Open ${tab}`}});
+const A1=(r,c)=>XLSX.utils.encode_cell({r,c});
+// Fill in the value of every formula cell, so viewers that don't recalculate (previews, mobile) still show the right numbers.
+function evalWB(wb){
+  const memo={},raw=(sh,a)=>{const c=wb.Sheets[sh][a];return c?c.v:null};
+  const val=(sh,a)=>{const k=sh+"!"+a;if(k in memo)return memo[k];const c=wb.Sheets[sh][a];if(!c)return 0;
+    if(c.f){memo[k]=0;const v=calc(sh,c.f);c.v=v;c.t="n";memo[k]=v;return v}return typeof c.v==="number"?c.v:0};
+  const cells=(sh,r)=>{const d=XLSX.utils.decode_range(r),o=[];for(let R=d.s.r;R<=d.e.r;R++)for(let C=d.s.c;C<=d.e.c;C++)o.push(XLSX.utils.encode_cell({r:R,c:C}));return o};
+  const split=(r,sh)=>{const m=r.trim().match(/^(?:'([^']+)'!)?([A-Z]+\d+:[A-Z]+\d+)$/);return [m[1]||sh,m[2]]};
+  const calc=(sh,f)=>{let e=f
+    .replace(/SUMIF\(([^,]+),"([^"]*)",([^)]+)\)/g,(m,r1,crit,r2)=>{const [s1,a1]=split(r1,sh),[s2,a2]=split(r2,sh),c1=cells(s1,a1),c2=cells(s2,a2);let t=0;c1.forEach((c,i)=>{if(String(raw(s1,c))===crit)t+=val(s2,c2[i])});return "("+t+")"})
+    .replace(/SUM\(([^)]+)\)/g,(m,r)=>{const [s1,a]=split(r,sh);return "("+cells(s1,a).reduce((t,c)=>t+val(s1,c),0)+")"})
+    .replace(/(?:'([^']+)'!)?([A-Z]{1,3})(\d+)/g,(m,s2,col,row)=>"("+val(s2||sh,col+row)+")");
+    const v=Function("return ("+e+")")();return Number.isFinite(v)?Math.round(v*1e6)/1e6:0};
+  wb.SheetNames.forEach(n=>{const ws=wb.Sheets[n];Object.keys(ws).forEach(a=>{if(a[0]!=="!"&&ws[a].f)val(n,a)})});
+}
+function buildWorkbook(){
+  const s=sol(),P=plans(),R=price(),A=addonTotals(),c=S.cust,term=+c.term||36,hasPlan=R.hasPlan;
+  const wb=XLSX.utils.book_new(),today=new Date().toISOString().slice(0,10),valid=new Date(Date.now()+30*864e5).toISOString().slice(0,10);
+  const planTab=hasPlan?`${P.names[S.plan]} Plan`.slice(0,31):null;
+  const T={plan:planTab,voice:"Domestic Voice (GSIP)",equip:"AudioCodes SBC and ATA",ps:"Professional Services",route:"Connectors and Routing",cust:"Customer and Countries",dom:"Domestic Rates",az:"International AtoZ Rates"};
+  const tabs=[];
+
+  // Plan tab
+  let planTot=null;
+  if(hasPlan){
+    const p=S.plan,du=R.du,ds=R.ds,rows=[[`${s.name} · ${S.variant||""} · ${P.names[p]} plan`],[`Volume discount: ${du*100}% on users (${int(R.t.users)} users, ${bandLabel(R.t.users,DATA.DISC.user,"users")}), ${ds*100}% on sites (${int(R.t.sites)} sites). Discounts apply to monthly charges only.`],[],
+      H(["Country","Users","Sites","User list MRC","User discount","User price MRC","Users MRC","Site list MRC","Site discount","Site price MRC","Sites MRC","User NRC","Site NRC","Total MRC","Total NRC"])];
+    const first=rows.length,cRows=[];
+    R.rows.forEach(r=>{const i=rows.length+1;cRows.push(i);
+      rows.push([r.c.name+(isHybrid()?` (${r.conn})`:""),r.q.users,r.q.sites,$m(P.userMRC[p]),$p(du),$m(P.userMRC[p]*(1-du),`D${i}*(1-E${i})`),$m(r.q.users*P.userMRC[p]*(1-du),`B${i}*F${i}`),
+        $m(P.siteMRC[p]),$p(ds),$m(P.siteMRC[p]*(1-ds),`H${i}*(1-I${i})`),$m(r.q.sites*P.siteMRC[p]*(1-ds),`C${i}*J${i}`),
+        $m(r.q.users*P.userNRC[p],`B${i}*${P.userNRC[p]}`),$m(r.q.sites*P.siteNRC[p],`C${i}*${P.siteNRC[p]}`),$m(0,`G${i}+K${i}`),$m(0,`L${i}+M${i}`)]);
+      if(r.india){const j=rows.length+1;rows.push(["  India OC special SKU",r.q.users,"",$m(P.india),$p(0),$m(P.india,`D${j}*(1-E${j})`),$m(0,`B${j}*F${j}`),"","","","","","",$m(0,`G${j}`),$m(0)])}});
+    const last=rows.length,tr=rows.length+1,cs=col=>cRows.map(i=>col+i).join("+");
+    rows.push(["Total",$n(R.t.users,cs("B")),$n(R.t.sites,cs("C")),"","","",$m(0,`SUM(G${first+1}:G${last})`),"","","",$m(0,`SUM(K${first+1}:K${last})`),$m(0,`SUM(L${first+1}:L${last})`),$m(0,`SUM(M${first+1}:M${last})`),$m(0,`SUM(N${first+1}:N${last})`),$m(0,`SUM(O${first+1}:O${last})`)]);
+    rows.push([],["What's included in the plan"]);P.features.forEach(f=>rows.push([f[0],f[p+1]?"Included":"Not included"]));
+    planTot={mrc:`'${planTab}'!N${tr}`,nrc:`'${planTab}'!O${tr}`,users:`'${planTab}'!B${tr}`};
+    tabs.push([planTab,xlSheet(rows,[34,8,8,12,10,12,12,12,10,12,12,12,12,13,13])]);
+  }
+  // Domestic voice tab
+  {const rows=[["GSIP domestic voice: numbers, channels and country setup"],["Rates from the GSIP price book. Per-minute call rates are on the Domestic Rates and International AtoZ Rates tabs."],[],
+    H(["Country","ISO","Numbers","Channels","Number MRC","Number NRC","Channel MRC","Channel NRC","Country setup NRC","Total MRC","Total NRC"])];
+   const first=rows.length;
+   R.rows.forEach(r=>{const i=rows.length+1,k=r.c.rates||{numMRC:0,numNRC:0,chMRC:0,chNRC:0,setup:0};
+     rows.push([r.c.name,r.c.iso,r.q.numbers,r.q.channels,$m(k.numMRC),$m(k.numNRC),$m(k.chMRC),$m(k.chNRC),$m(k.setup),$m(0,`C${i}*E${i}+D${i}*G${i}`),$m(0,`C${i}*F${i}+D${i}*H${i}+I${i}`)])});
+   const last=rows.length,tr=rows.length+1;
+   rows.push(["Total","",$n(R.t.numbers,`SUM(C${first+1}:C${last})`),$n(R.t.channels,`SUM(D${first+1}:D${last})`),"","","","","",$m(0,`SUM(J${first+1}:J${last})`),$m(0,`SUM(K${first+1}:K${last})`)]);
+   var voiceTot={mrc:`'${T.voice}'!J${tr}`,nrc:`'${T.voice}'!K${tr}`,numbers:`'${T.voice}'!C${tr}`,channels:`'${T.voice}'!D${tr}`};
+   tabs.push([T.voice,xlSheet(rows,[24,6,10,10,12,12,12,12,16,14,14])]);}
+  // Equipment tab: every SKU offered, quantity 0 when not chosen, so it's clear what was and wasn't selected
+  {const rows=[["AudioCodes Live: SBC, ATA, platform and operator connection SKUs"],["Every SKU available for this solution is listed. Quantity 0 means not selected."],[`Cloud SBC sessions by region: ${REGIONS.map(r=>r+" "+int(+(S.regions||{})[r]||0)).join(", ")}. ${ruleState().instances} instance(s).`],["Rules: Cloud SBC Essential quantity = total sessions; session packs = sessions per region rounded up to 10; one setup charge per regional instance; ATA installations at least equal to ATAs; on-prem lifecycle bundles at least equal to on-prem SBCs."],[],
+    H(["Category","SKU code","Name","Unit of measure","Charge type","Minimum term","Selected","Quantity","Unit price","Monthly","One time","Annual"])];
+   const first=rows.length;
+   DATA.EQUIP.forEach(k=>{const a=skuAvailable(k);if(!a.show)return;const q=a.ok?(S.addons[k.code]||0):0,i=rows.length+1;const ct=/annual|year/i.test(k.charge)?"L":/nrc|one/i.test(k.charge)?"K":"J";
+     rows.push([k.cat,k.code,k.name,k.uom,k.charge,k.term,a.ok?(q?"Yes":"No"):"Not available on this plan",q,$m(k.price),ct==="J"?$m(0,`H${i}*I${i}`):$m(0),ct==="K"?$m(0,`H${i}*I${i}`):$m(0),ct==="L"?$m(0,`H${i}*I${i}`):$m(0)])});
+   const last=rows.length,tr=rows.length+1;
+   rows.push(["Total","","","","","","",$n(0,`SUM(H${first+1}:H${last})`),"",$m(0,`SUM(J${first+1}:J${last})`),$m(0,`SUM(K${first+1}:K${last})`),$m(0,`SUM(L${first+1}:L${last})`)]);
+   var equipRange={first:first+1,last};
+   tabs.push([T.equip,xlSheet(rows,[20,22,44,26,10,14,12,9,11,12,12,12])]);}
+  // Professional services tab
+  {const tier=planTier(),rows=[["Professional services: Day 1 project team and Day 2 support"],["Complimentary periods are shown at $0. Any time beyond them is chargeable at the rates in the rate card below."],[],
+    H(["Section","Role","Type","Period","Months","Rate per month","Cost","Note"])];
+   const first=rows.length;
+   day1Roles().forEach(r=>{const m=S.team[r.key]||0;if(!m||!r.bands[0].avail[tier])return;
+     day1Cost(r,m).parts.forEach(pt=>{const i=rows.length+1;rows.push(["Day 1",r.role,r.type,pt.b.band.replace(/monts/i,"months").trim(),pt.n,$m(pt.b.rate),$m(0,`E${i}*F${i}`),pt.b.rateText?"Complimentary":"Chargeable"])})});
+   const d1last=rows.length,d1tr=rows.length+1;
+   rows.push(["Day 1 total (one time)","","","","","",$m(0,d1last>first?`SUM(G${first+1}:G${d1last})`:"0"),""],[]);
+   rows.push(H(["Section","Role","Type","Period","Quantity","Rate per month","Monthly","Note"]));
+   const d2first=rows.length;
+   DATA.TEAM.day2.forEach(x=>{const k=teamKey(x),inc=!!x.rateText,q=inc?1:(S.sdm[k]||0);if(!q||!x.avail[tier])return;const i=rows.length+1;
+     rows.push(["Day 2",x.role.trim(),x.type,x.band,q,$m(x.rate),$m(0,`E${i}*F${i}`),inc?"Included in the plan price":"Chargeable every month"])});
+   const d2last=rows.length,d2tr=rows.length+1;
+   rows.push(["Day 2 total (monthly)","","","","","",$m(0,d2last>d2first?`SUM(G${d2first+1}:G${d2last})`:"0"),""],[],["Rate card (chargeable if extended or added later)"],H(["Section","Role","Type","Period","Rate per month","Available on this plan"]));
+   DATA.TEAM.day1.forEach(b=>rows.push(["Day 1",b.role,b.type,b.band.replace(/monts/i,"months").trim(),b.rateText?b.rateText:$m(b.rate),b.avail[tier]?"Yes":"No"]));
+   DATA.TEAM.day2.forEach(b=>rows.push(["Day 2",b.role.trim(),b.type,b.band,b.rateText?b.rateText:$m(b.rate),b.avail[tier]?"Yes":"No"]));
+   var psTot={d1:`'${T.ps}'!G${d1tr}`,d2:`'${T.ps}'!G${d2tr}`};
+   tabs.push([T.ps,xlSheet(rows,[22,32,24,18,9,14,14,26])]);}
+  // Connectors and routing (configuration, no charge)
+  {syncConnectors();const rows=[["Connectors and routing"],["Each customer site connects to two Tata Communications PoPs for redundancy. Configuration only: nothing on this tab is charged."],[],
+    H(["Connector","Type","Site","Region","Customer SBC addresses","Customer media range","Primary Tata PoP","Primary PoP IP","Secondary Tata PoP","Secondary PoP IP","Encryption","Routing between PoPs"])];
+   S.connectors.forEach(c=>{if(c.kind==="platform"){rows.push([c.name,"Platform connector","Set up by Tata Communications","","","","","","","","",""]);return}
+     const a=pop(c.pops[0])||{},b=pop(c.pops[1])||{};
+     rows.push([c.name,"Customer site (2 links)",[c.city,c.iso&&country(c.iso).name].filter(Boolean).join(", "),c.iso?regionOf(c.iso):"",ipList(c.ips).join(", "),c.media,`${a.city||""} (${a.code||""})`,a.ip||"",`${b.city||""} (${b.code||""})`,b.ip||"",c.enc,/weight/i.test(c.routing)?`${c.routing} ${c.weight}/${100-c.weight}`:c.routing])});
+   rows.push([],["Clusters"]);
+   if(S.clusters.length){rows.push(H(["Cluster","Mode","Connectors in priority order","Used for","How it works"]));
+     S.clusters.forEach(k=>rows.push([k.name,k.mode,k.members.map(connLabel).join(" > "),k.scope==="countries"&&k.countries.length?k.countries.map(i=>country(i).name).join(", "):"All numbers",clusterSentence(k)]))}
+   else rows.push(["No clusters defined."]);
+   tabs.push([T.route,xlSheet(rows,[26,22,26,10,30,18,20,15,20,15,16,26])]);}
+  // Customer and countries
+  {const rows=[["Customer"],["Company",c.company],["Registration or VAT number",c.regNo],["Headquarters country",c.hq],["Industry",c.industry],["Registered address",c.address],[TENANT_LABEL[s.id]||"Account ID",c.tenant],
+    ["Primary contact",c.pName],["Job title",c.pRole],["Email",c.pEmail],["Phone",c.pPhone],["Technical contact",c.tName],["Technical email",c.tEmail],["Account manager",c.owner],[],
+    ["Countries"],H(["Country","Local entity","Service address","Numbers","Channels","Users","Sites","Porting","Restrictions"])];
+   R.rows.forEach(r=>{const e=c.entities[r.c.iso]||{};rows.push([r.c.name,e.name||c.company,e.addr||"",r.q.numbers,r.q.channels,r.q.users,r.q.sites,r.c.port,r.c.restr])});
+   tabs.push([T.cust,xlSheet(rows,[26,30,34,10,10,10,8,40,60])]);}
+  // Rate tabs
+  tabs.push([T.dom,xlSheet([["Domestic termination rates, USD per minute"],[],H(["Country","Fixed","Mobile","Special"]),...R.rows.map(r=>[r.c.name,...(r.c.dom?[$r(r.c.dom.fixed),$r(r.c.dom.mobile),$r(r.c.dom.special)]:["no rate"])])],[24,12,12,12])]);
+  tabs.push([T.az,xlSheet([["International termination rates (A to Z), USD per minute"],[],H(["Country","Destination","Prefix","Rate per minute","Increment","Route type"]),...DATA.AZ.map(a=>[a.country,a.dest,a.prefix,$r(a.rate),a.inc,a.route])],[24,26,10,14,10,14])]);
+
+  // Summary tab
+  const eq=(cat,col)=>`SUMIF('${T.equip}'!A${equipRange.first}:A${equipRange.last},"${cat}",'${T.equip}'!${col}${equipRange.first}:${col}${equipRange.last})`;
+  const rows=[["Tata Communications  |  UC quotation"],["Quote",editing||"Draft"],["Prepared",today],["Valid until",valid],["Customer",c.company],["Headquarters",c.hq],["Contact",[c.pName,c.pEmail].filter(Boolean).join(", ")],
+    ["Solution",[s.name,S.variant,hasPlan?P.names[S.plan]+" plan":null].filter(Boolean).join(" · ")],["Contract term (months)",term],["Currency","USD"],[],
+    H(["Charge","Details tab","Quantity","Monthly (MRC)","One time (NRC)","Annual"])];
+  const h=rows.length;
+  if(hasPlan)rows.push([`${P.names[S.plan]} plan: users and sites`,link(planTab,planTab),$n(R.t.users,planTot.users),$m(0,planTot.mrc),$m(0,planTot.nrc),$m(0)]);
+  rows.push(["GSIP voice: numbers, channels, setup",link(T.voice,T.voice),$n(R.t.numbers,voiceTot.numbers),$m(0,voiceTot.mrc),$m(0,voiceTot.nrc),$m(0)]);
+  [...new Set(DATA.EQUIP.filter(k=>skuAvailable(k).show).map(k=>k.cat))].forEach(cat=>rows.push([`AudioCodes: ${cat}`,link(T.equip,T.equip),$n(0,`SUMIF('${T.equip}'!A${equipRange.first}:A${equipRange.last},"${cat}",'${T.equip}'!H${equipRange.first}:H${equipRange.last})`),$m(0,eq(cat,"J")),$m(0,eq(cat,"K")),$m(0,eq(cat,"L"))]));
+  rows.push(["Day 1 professional services",link(T.ps,T.ps),"",$m(0),$m(0,psTot.d1),$m(0)]);
+  rows.push(["Day 2 support",link(T.ps,T.ps),"",$m(0,psTot.d2),$m(0),$m(0)]);
+  const last=rows.length,tr=rows.length+1;
+  rows.push(["Total","","",$m(0,`SUM(D${h+1}:D${last})`),$m(0,`SUM(E${h+1}:E${last})`),$m(0,`SUM(F${h+1}:F${last})`)]);
+  rows.push([`Total contract value over ${term} months`,"","",$m(0,`D${tr}*B9+E${tr}+F${tr}*B9/12`)]);
+  rows.push([],["Key figures"],["Countries",picked.size],["Users",$n(R.t.users)],["Sites",$n(R.t.sites)],["Numbers",$n(R.t.numbers)],["Channels",$n(R.t.channels)],[],
+    ["Call usage is billed per minute on top:",link(T.dom,T.dom),link(T.az,T.az)],["Customer details and local entities:",link(T.cust,T.cust)],["Connectors, PoPs and clusters:",link(T.route,T.route)]);
+  XLSX.utils.book_append_sheet(wb,xlSheet(rows,[40,28,12,16,16,14]),"Summary");
+  tabs.forEach(([n,ws])=>XLSX.utils.book_append_sheet(wb,ws,n));
+  evalWB(wb);
+  wb.Workbook={CalcPr:{fullCalcOnLoad:true}};
+  return wb;
+}
+// ---- Tata Communications styling (ExcelJS, loaded only when a quote is downloaded) ----
+// Colours are close to the Tata Communications palette; change them here if brand gives exact codes.
+const BRAND={navy:"0A2A66",blue:"1E4FA3",accent:"00A3E0",light:"EAF1FB",total:"D6E4F7",line:"C9D6EA",grey:"5B6B82"};
+let _xj=null;
+function loadExcelJS(){return _xj||(_xj=new Promise((ok,no)=>{if(window.ExcelJS)return ok(window.ExcelJS);
+  const sc=document.createElement("script");sc.src="vendor/exceljs-4.4.0.min.js";
+  sc.onload=()=>window.ExcelJS?ok(window.ExcelJS):no(new Error("ExcelJS missing"));sc.onerror=()=>{_xj=null;no(new Error("The Excel styling library didn't load"))};document.head.appendChild(sc)}))}
+async function styledWorkbook(sx){
+  const EX=await loadExcelJS(),wb=new EX.Workbook();
+  wb.creator="Tata Communications UC Order Hub";wb.created=new Date();wb.calcProperties={fullCalcOnLoad:true};
+  const fill=c=>({type:"pattern",pattern:"solid",fgColor:{argb:"FF"+c}}),thin=c=>({style:"thin",color:{argb:"FF"+c}});
+  const box={top:thin(BRAND.line),bottom:thin(BRAND.line),left:thin(BRAND.line),right:thin(BRAND.line)};
+  sx.SheetNames.forEach((name,si)=>{
+    const ws=sx.Sheets[name],rg=XLSX.utils.decode_range(ws["!ref"]),nc=Math.max(rg.e.c+1,4),roles=ws["!roles"]||{};
+    const heads=Object.keys(roles).filter(k=>roles[k]==="head").map(Number),firstHead=heads.length?Math.min(...heads):Infinity;
+    const sh=wb.addWorksheet(name,{properties:{tabColor:{argb:"FF"+(si===0?BRAND.navy:name.includes("Rates")?BRAND.accent:BRAND.blue)}},
+      views:[{showGridLines:false,...(si>0&&firstHead<12?{state:"frozen",ySplit:firstHead+1}:{})}],
+      pageSetup:{orientation:"landscape",fitToPage:true,fitToWidth:1,fitToHeight:0}});
+    (ws["!cols"]||[]).forEach((c,i)=>sh.getColumn(i+1).width=c.wch+2);
+    const rowCells=r=>{const o=[];for(let c=0;c<=rg.e.c;c++){const x=ws[XLSX.utils.encode_cell({r,c})];if(x)o.push([c,x])}return o};
+    let band=0,inTable=false;
+    for(let r=0;r<=rg.e.r;r++){
+      const cells=rowCells(r),row=sh.getRow(r+1);
+      cells.forEach(([c,x])=>{const cl=row.getCell(c+1);
+        if(x.f)cl.value={formula:x.f,result:x.v};
+        else if(x.l)cl.value={text:String(x.v),hyperlink:x.l.Target,tooltip:x.l.Tooltip};
+        else cl.value=x.v;
+        if(x.z)cl.numFmt=x.z;
+        if(x.l)cl.font={color:{argb:"FF"+BRAND.blue},underline:true};});
+      const a=cells.length?cells[0][1]:null,txt=a&&typeof a.v==="string"?a.v:"",only=cells.length===1&&typeof a.v==="string";
+      const span=()=>{if(nc>1)sh.mergeCells(r+1,1,r+1,nc)};
+      if(r===0){ // title banner
+        span();row.height=34;const cl=row.getCell(1);cl.fill=fill(BRAND.navy);cl.font={bold:true,size:16,color:{argb:"FFFFFFFF"}};
+        cl.alignment={vertical:"middle",indent:1};cl.border={bottom:{style:"thick",color:{argb:"FF"+BRAND.accent}}};continue}
+      if(!cells.length){inTable=false;continue}
+      if(roles[r]==="head"){inTable=true;band=0;row.height=32;
+        for(let c=1;c<=Math.max(cells.length?cells[cells.length-1][0]+1:0,1);c++){const cl=row.getCell(c);cl.fill=fill(BRAND.blue);
+          cl.font={bold:true,color:{argb:"FFFFFFFF"}};cl.alignment={vertical:"middle",wrapText:true,horizontal:c===1?"left":"center"};cl.border=box}
+        continue}
+      if(only&&r<firstHead&&r<6&&sx.SheetNames[0]!==name){ // explanatory note under the title
+        span();const cl=row.getCell(1);cl.font={italic:true,size:10,color:{argb:"FF"+BRAND.grey}};cl.alignment={wrapText:true,vertical:"top"};
+        row.height=Math.max(16,Math.ceil(txt.length/(nc*11))*15);continue}
+      if(only&&!inTable){ // section heading
+        const cl=row.getCell(1);cl.font={bold:true,size:12,color:{argb:"FF"+BRAND.navy}};row.height=22;
+        for(let c=1;c<=nc;c++)row.getCell(c).border={bottom:{style:"medium",color:{argb:"FF"+BRAND.accent}}};continue}
+      const last=cells[cells.length-1][0]+1,width=inTable?Math.max(last,sh.getRow(firstHead+1).cellCount,1):last;
+      if(/^total|total \(|^total contract/i.test(txt)||/ total$/i.test(txt)){ // total row
+        const grand=/contract value/i.test(txt);
+        for(let c=1;c<=Math.max(width,nc>6?6:width);c++){const cl=row.getCell(c);cl.fill=fill(grand?BRAND.navy:BRAND.total);
+          cl.font={bold:true,color:{argb:grand?"FFFFFFFF":"FF"+BRAND.navy}};cl.border={top:{style:"medium",color:{argb:"FF"+BRAND.navy}},bottom:thin(BRAND.line)}}
+        row.height=20;continue}
+      if(inTable){ // banded data row
+        const f=band++%2?fill(BRAND.light):null;
+        for(let c=1;c<=width;c++){const cl=row.getCell(c);if(f)cl.fill=f;cl.border=box;cl.alignment={vertical:"top",wrapText:c===1&&!!(ws["!cols"]&&ws["!cols"][0]&&ws["!cols"][0].wch<30)}}
+        if(/^\s/.test(txt))row.getCell(1).font={italic:true,color:{argb:"FF"+BRAND.blue}};
+        continue}
+      // label and value pairs (summary and customer headers)
+      const lc=row.getCell(1),after=r>firstHead;lc.font={bold:!after,color:{argb:"FF"+BRAND.navy}};lc.fill=fill(BRAND.light);lc.border=box;if(after)lc.alignment={wrapText:true,vertical:"top"};
+      for(let c=2;c<=last;c++)row.getCell(c).border=box;
+    }
+  });
+  return await wb.xlsx.writeBuffer();
+}
+async function downloadQuote(){
+  const m=$("dlmsg");m.className="dsmsg";
+  if(typeof XLSX==="undefined"){m.className="dsmsg bad";m.textContent="The Excel library didn't load. Reload the page and try again.";return}
+  const dl=window.claude&&claude.use?await claude.use("downloads"):null;
+  if(!dl){m.className="dsmsg bad";m.textContent="Downloading isn't available in this view. Open the page on claude.ai to download.";return}
+  try{
+    const sx=buildWorkbook();let buf;
+    try{buf=await styledWorkbook(sx)}catch(e){console.warn(e);buf=XLSX.write(sx,{bookType:"xlsx",type:"array"})}
+    const name=`${editing||"Draft"} ${S.cust.company||"Customer"} UC quote.xlsx`.replace(/[\\/:*?"<>|]+/g,"");
+    await dl.save({filename:name,data:new Blob([buf])});
+    m.className="dsmsg ok";m.textContent="Excel quote downloaded.";
+  }catch(e){m.className="dsmsg bad";m.textContent=e&&e.code==="declined"?"Download cancelled.":"The download didn't work: "+(e&&e.message||e)}
+}
+const rate=n=>"$"+(+n||0).toFixed(4);
+function canNext(){
+  if(!DATA)return false;
+  if(S.step===0)return !!S.sol;
+  if(S.step===1){const s=sol();return (!s.variants||!!S.variant)&&(!plans()||S.plan!=null)}
+  if(S.step===2)return picked.size>0;
+  if(S.step===3){const t=totals();return t.numbers+t.channels>0}
+  if(S.step===6)return !!routingOk();
+  if(S.step===8)return !custMissing().length;
+  return true;
+}
+function update(){
+  const s=sol(),P=plans();
+  const bits=[S.cust.company||null,s?s.name:null,S.variant,P&&S.plan!=null?P.names[S.plan]+" plan":null,picked.size?`${picked.size} ${picked.size>1?"countries":"country"}`:null].filter(Boolean);
+  $("summary").textContent=bits.length?bits.join(" · "):"Choose a solution to get started.";
+  $("next").setAttribute("aria-disabled",!canNext());
+  $("save").setAttribute("aria-disabled",!s);
+}
+function next(){
+  if(!canNext())return;
+  if(S.step<LAST_BUILT){S.step++;$("msg").hidden=true;renderStep();window.scrollTo(0,0)}
+  else{$("msg").hidden=false;$("msg").textContent="Order and provisioning isn't built yet. We'll design it together."}
+}
+function back(){if(S.step>0){S.step--;$("msg").hidden=true;renderStep()}}
+keyBtn("next",next);keyBtn("back",back);
+function newOrder(){Object.assign(S,{step:0,sol:null,variant:null,plan:null,qty:{},addons:{},team:{},sdm:{},cust:EMPTY_CUST(),regions:{},conn:{},connectors:[],clusters:[]});picked.clear();editing=null;$("msg").hidden=true;renderStep()}
+
+// ================= Dashboard =================
+const VN={gsip:"GSIP",ms:"Microsoft",cisco:"Cisco",zoom:"Zoom"};
+const EX_QUOTES=[
+ {ref:"Q-10482",cust:{company:"Northwind Logistics (example)"},sol:"ms",variant:"Operator Connect",plan:1,countries:["GB","IE","DE"],qty:{GB:{numbers:400,channels:60,users:600,sites:6},IE:{numbers:80,channels:15,users:120,sites:2},DE:{numbers:150,channels:30,users:130,sites:4}},step:4,updated:"2026-10-11",status:"Draft",ex:true},
+ {ref:"Q-10477",cust:{company:"Contoso Retail (example)"},sol:"gsip",variant:null,plan:null,countries:["US","CA"],qty:{US:{numbers:200,channels:40,users:0,sites:2},CA:{numbers:50,channels:10,users:0,sites:1}},step:5,updated:"2026-10-08",status:"Sent to customer",ex:true},
+ {ref:"Q-10451",cust:{company:"Fabrikam Health (example)"},sol:"cisco",variant:"Webex Calling",plan:1,countries:["IN","SG","JP"],qty:{},step:3,updated:"2026-09-22",status:"Expired",ex:true}];
+const OSTAGES=["Received","Validated","Sent to vendor","Numbers assigned","Live"];
+const EX_ORDERS=[
+ {ref:"O-55120",sol:"ms",countries:["GB","FR"],stage:2,placed:"2026-10-06",status:"In progress"},
+ {ref:"O-55098",sol:"zoom",countries:["US"],stage:3,placed:"2026-09-30",status:"Action needed",block:"Letter of authorisation missing for porting"},
+ {ref:"O-55031",sol:"cisco",countries:["AU","SG"],stage:4,placed:"2026-09-12",status:"Live"}];
+const LS="ucoh.quotes.v3";
+const loadSaved=()=>{try{return JSON.parse(localStorage.getItem(LS)||"[]")}catch(e){return[]}};
+const storeSaved=a=>{try{localStorage.setItem(LS,JSON.stringify(a))}catch(e){}};
+let editing=null;
+const allQuotes=()=>[...loadSaved(),...EX_QUOTES];
+const pillCls=st=>st==="Expired"?"idle":/Live|Sent/.test(st)?"ok":/Action/.test(st)?"warn":"";
+const planLabel=x=>{const P=DATA&&DATA.PLANS[x.sol];return [VN[x.sol],x.variant,P&&x.plan!=null?P.names[x.plan]:null].filter(Boolean).join(" · ")};
+function renderDash(mode){
+  const q=allQuotes(), o=EX_ORDERS;
+  $("p-quotes").hidden=mode==="orders"; $("p-orders").hidden=mode==="quotes"; $("stats").hidden=mode!=="dashboard";
+  $("dash-eyebrow").textContent=mode==="dashboard"?"Dashboard":"Dashboard / "+(mode==="quotes"?"My quotes":"My orders");
+  $("dash-title").textContent={dashboard:"Your quotes and orders",quotes:"My quotes",orders:"My orders"}[mode];
+  $("stats").innerHTML=[[q.filter(x=>x.status==="Draft").length,"Draft quotes"],[q.filter(x=>x.status==="Sent to customer").length,"Quotes awaiting customer"],
+    [o.filter(x=>x.status==="In progress").length,"Orders in progress"],[o.filter(x=>x.status==="Action needed").length,"Orders needing action"]]
+    .map(([n,l])=>`<div class="stat"><b>${n}</b><span>${l}</span></div>`).join("");
+  $("t-quotes").innerHTML=`<table><thead><tr><th>Quote</th><th>Customer</th><th>Solution</th><th>Countries</th><th>Progress</th><th>Updated</th><th>Status</th><th></th></tr></thead><tbody>${
+    q.map(x=>`<tr><td class="ref">${x.ref}${x.ex?"":' <span class="sample">yours</span>'}</td><td>${esc((x.cust&&x.cust.company)||"–")}</td><td>${planLabel(x)}</td><td>${x.countries.join(", ")||"–"}</td><td>Step ${x.step+1} of ${STEPS.length} · ${STEPS[x.step][0]}</td><td>${x.updated}</td><td><span class="pill ${pillCls(x.status)}">${x.status}</span></td><td><button class="act" data-q="${x.ref}">${x.status==="Expired"?"Requote":"Resume"}</button></td></tr>`).join("")}</tbody></table>`;
+  $("t-orders").innerHTML=`<table><thead><tr><th>Order</th><th>Solution</th><th>Countries</th><th>Stage</th><th>Placed</th><th>Status</th><th></th></tr></thead><tbody>${
+    o.map(x=>`<tr><td class="ref">${x.ref}</td><td>${VN[x.sol]}</td><td>${x.countries.join(", ")}</td><td>${OSTAGES[x.stage]}</td><td>${x.placed}</td><td><span class="pill ${pillCls(x.status)}">${x.status}</span></td><td><button class="act" data-o="${x.ref}" aria-expanded="false">Track</button></td></tr>
+    <tr class="trk" id="trk-${x.ref}" hidden><td colspan="7"><div class="steps">${OSTAGES.map((s,i)=>`<span class="${i<x.stage||x.status==="Live"?"d":i===x.stage?(x.block?"b":"c"):""}">${s}</span>`).join("")}</div>${x.block?`<div class="blk">Waiting on you: ${x.block}</div>`:""}</td></tr>`).join("")}</tbody></table>`;
+  document.querySelectorAll("[data-q]").forEach(b=>b.onclick=()=>{const x=allQuotes().find(r=>r.ref===b.dataset.q);
+    Object.assign(S,{sol:x.sol,variant:x.variant,plan:x.plan,qty:JSON.parse(JSON.stringify(x.qty||{})),addons:{...(x.addons||{})},team:{...(x.team||{})},sdm:{...(x.sdm||{})},cust:{...EMPTY_CUST(),...(x.cust||{})},regions:{...(x.regions||{})},conn:{...(x.conn||{})},connectors:JSON.parse(JSON.stringify(x.connectors||[])),clusters:JSON.parse(JSON.stringify(x.clusters||[])),step:Math.min(!x.v4&&x.step>=6?x.step+1:x.step,LAST_BUILT)});
+    picked.clear();x.countries.forEach(c=>{if(!DATA||DATA.COUNTRIES.some(k=>k.iso===c))picked.add(c)});editing=x.ex||x.status==="Expired"?null:x.ref;
+    location.hash="order";renderStep();
+    $("msg").hidden=x.step<=LAST_BUILT;$("msg").textContent=`Reopened ${x.ref} at the ${STEPS[S.step][0].toLowerCase()} step. Later steps aren't built yet.`});
+  document.querySelectorAll("[data-o]").forEach(b=>b.onclick=()=>{const r=$("trk-"+b.dataset.o);r.hidden=!r.hidden;b.setAttribute("aria-expanded",!r.hidden);b.textContent=r.hidden?"Track":"Hide"});
+}
+function saveQuote(){
+  if($("save").getAttribute("aria-disabled")!=="false")return;
+  const a=loadSaved(), today=new Date().toISOString().slice(0,10);
+  let rec=editing&&a.find(r=>r.ref===editing);
+  if(!rec){rec={ref:"Q-"+(10500+a.length+1),status:"Draft"};a.unshift(rec);editing=rec.ref}
+  Object.assign(rec,{sol:S.sol,variant:S.variant,plan:S.plan,countries:[...picked],qty:S.qty,addons:S.addons,team:S.team,sdm:S.sdm,cust:S.cust,regions:S.regions,conn:S.conn,connectors:S.connectors,clusters:S.clusters,v4:true,step:S.step,updated:today});
+  storeSaved(a);$("msg").hidden=false;$("msg").textContent=`Saved as ${rec.ref}. Find it under My quotes to pick it up later.`;
+}
+keyBtn("save",saveQuote);
+document.querySelectorAll('a[href="#order"]').forEach(a=>a.addEventListener("click",newOrder));
+
+// ================= Data files page =================
+function renderDataPage(){
+  const rows=DATASETS.map(ds=>{const r=RAW[ds.key];
+    return `<div class="panel ds"><div class="dsh"><div><div class="eyebrow">${esc(ds.orig)}</div><h2>${esc(ds.label)}</h2></div>
+      <span class="pill ${r&&r.source==="uploaded"?"ok":"idle"}">${!r?"Not loaded":r.source==="uploaded"?"Updated copy":"Original file"}</span></div>
+      <p class="fine">Feeds: ${esc(ds.used)}.</p>
+      <p class="fine">${r?(r.source==="uploaded"?`Using ${esc(r.fileName)}, uploaded ${esc((r.uploadedAt||"").slice(0,16).replace("T"," "))}.`:"Using the file that shipped with this page."):""} Sheets: ${r?Object.keys(r.sheets).map(esc).join(", "):"–"}.</p>
+      ${canEditData?`<div class="dsa"><label class="btn ghost up" for="up-${ds.key}">Replace with updated Excel</label><input type="file" id="up-${ds.key}" data-key="${ds.key}" accept=".xlsx,.xls" hidden>
+        ${r&&r.source==="uploaded"?`<button class="act" data-reset="${ds.key}">Go back to the original file</button>`:""}</div>`:""}
+      <div class="dsmsg" id="m-${ds.key}"></div></div>`}).join("");
+  const health=dataErr?`<div class="todo bad">The files couldn't be read: ${esc(dataErr)}</div>`:DATA?`<div class="stats">${[[DATA.COUNTRIES.length,"Countries"],[DATA.COUNTRIES.filter(c=>c.rates).length,"Countries with PSTN rates"],[DATA.PLANS.ms.names.length+DATA.PLANS.cisco.names.length,"Service plans"],[DATA.azRows,"International rate lines"],[DATA.EQUIP.length,"Equipment SKUs"]].map(([n,l])=>`<div class="stat"><b>${int(n)}</b><span>${l}</span></div>`).join("")}</div>
+    ${DATA.issues.length?`<div class="todo bad"><b>Check these:</b><ul>${DATA.issues.map(i=>`<li>${esc(i)}</li>`).join("")}</ul></div>`:'<p class="fine okline">Every country in the ANR file has matching rates in the price book.</p>'}`:"<p class=\"fine\">Loading…</p>";
+  $("v-data").innerHTML=`<div><div class="eyebrow">Admin</div><h1>Data files</h1><p class="lede">The order flow reads its countries, plans and prices from these Excel files. To change a price or add a country, edit the Excel file and upload it here. Keep the same sheet names and column headings.</p>
+    ${db===null?'<p class="fine">Uploading is unavailable in this view, so the page is using the original files.</p>':!canEditData?'<p class="fine">Only editors of this page can replace files.</p>':""}</div>${health}${rows}`;
+  $("v-data").querySelectorAll("input[type=file]").forEach(i=>i.onchange=()=>uploadDataset(i.dataset.key,i.files[0]));
+  $("v-data").querySelectorAll("[data-reset]").forEach(b=>b.onclick=()=>resetDataset(b.dataset.reset));
+}
+async function uploadDataset(key,file){
+  if(!file)return; const m=$("m-"+key); m.className="dsmsg"; m.textContent="Reading "+file.name+"…";
+  try{
+    const sheets=wbToSheets(XLSX.read(await file.arrayBuffer()));
+    const prev=RAW[key]; RAW[key]={sheets,source:"uploaded",fileName:file.name,uploadedAt:new Date().toISOString()};
+    try{buildModel()}catch(e){RAW[key]=prev;throw new Error("This file doesn't match the expected layout: "+e.message)}
+    const sheetsJson=JSON.stringify(sheets);
+    if(sheetsJson.length>240000)throw new Error("This file is too large to store here (keep it under about 200 KB of cell data).");
+    await db.doc("datasets/"+key).set({fileName:file.name,uploadedAt:RAW[key].uploadedAt,sheetsJson});
+    DATA=buildModel();dataErr=null;renderDataPage();
+    const m2=$("m-"+key); m2.className="dsmsg ok"; m2.textContent=`Updated from ${file.name}. The order flow now uses it.`;
+  }catch(e){m.className="dsmsg bad";m.textContent=e.message||"Upload failed."}
+}
+async function resetDataset(key){
+  const m=$("m-"+key);
+  try{await db.doc("datasets/"+key).delete();RAW[key]=await loadBundled(DATASETS.find(d=>d.key===key));DATA=buildModel();dataErr=null;renderDataPage();$("m-"+key).className="dsmsg ok";$("m-"+key).textContent="Back on the original file."}
+  catch(e){m.className="dsmsg bad";m.textContent=e.message||"Couldn't reset."}
+}
+
+// ================= Coverage page (from the ANR file) =================
+function coverageHTML(){
+  if(!DATA)return `<p class="fine">Loading countries…</p>`;
+  return `<input class="search" id="covq" type="search" placeholder="Search countries" aria-label="Search countries"><div class="tbl"><table class="cov"><thead><tr><th>Country</th><th>Number range</th><th>Porting</th><th>Restrictions</th><th>New number documents</th><th>Porting documents</th></tr></thead><tbody id="covb"></tbody></table></div>`;
+}
+function bindCoverage(){const q=$("covq");if(!q||!DATA)return;const draw=()=>{const s=q.value.trim().toLowerCase();$("covb").innerHTML=DATA.COUNTRIES.filter(c=>c.name.toLowerCase().includes(s)).map(c=>`<tr><td><b>${esc(c.name)}</b><small>${c.iso}</small></td><td>${esc(c.range)}</td><td><span class="pt ${c.portable}">${c.portable==="yes"?"Yes":c.portable==="no"?"No":"Partial"}</span> ${esc(c.port.replace(/^(yes|no|partial)\s*[\u2013-]\s*/i,""))}</td><td>${esc(c.restr)}</td><td>${esc(c.newDocs)}</td><td>${esc(c.portDocs)}</td></tr>`).join("")};q.oninput=draw;draw()}
+
+// ================= Coverage map (countries from the ANR file, shapes from data/world-map.json) =================
+let MAP=null,mapSel=null;
+async function loadMap(){if(MAP)return MAP;try{MAP=await (await fetch("data/world-map.json")).json()}catch(e){MAP=null}return MAP}
+const covISO=()=>new Set((DATA?DATA.COUNTRIES:[]).map(c=>c.iso));
+function mapSVG(mini){
+  const on=covISO(),drawn=new Set(MAP.shapes.map(s=>s.a2));
+  const shapes=MAP.shapes.map(s=>{const c=on.has(s.a2)&&!mini?country(s.a2):null;
+    return c?`<path d="${s.d}" class="on" data-iso="${s.a2}" tabindex="0" role="button" aria-label="${esc(c.name)}"></path>`:`<path d="${s.d}" class="${on.has(s.a2)?"on":"off"}"${mini?"":` data-n="${esc(s.n)}"`}></path>`}).join("");
+  // small or missing countries get a marker so they can be found and clicked
+  const dots=[...on].filter(i=>MAP.points[i]&&(MAP.points[i].tiny||!drawn.has(i))).map(i=>{const p=MAP.points[i].p,c=country(i);
+    return mini?`<circle cx="${p[0]}" cy="${p[1]}" r="5"></circle>`:`<circle cx="${p[0]}" cy="${p[1]}" r="4.5" class="on" data-iso="${i}" tabindex="0" role="button" aria-label="${esc(c.name)}"></circle>`}).join("");
+  return `<svg viewBox="0 0 ${MAP.w} ${MAP.h}" ${mini?'aria-hidden="true"':`id="wmap" role="group" aria-label="World map of countries where service is available"`}>${shapes}${dots}</svg>`;
+}
+const VIEWS={World:[0,0,1000,500],Europe:[440,60,170,110],"Asia Pacific":[640,120,340,300],Americas:[60,40,360,400],Africa:[430,170,200,220]};
+function mapPageHTML(){
+  if(!DATA)return `<p class="fine">Loading countries…</p>`;
+  return `<div class="mapwrap"><div><div class="mapbox" id="mapbox"><p class="fine" style="padding:16px">Loading the map…</p></div>
+    <div class="covlist" id="covlist" aria-label="Covered countries">${DATA.COUNTRIES.map(c=>`<button data-iso="${c.iso}">${esc(c.name)}</button>`).join("")}</div></div>
+    <aside class="side" id="mapside" aria-live="polite"></aside></div>`;
+}
+function sideHTML(iso,name){
+  const c=iso&&country(iso);
+  if(!c&&!name)return `<div class="eyebrow">Coverage</div><h2>${DATA.COUNTRIES.length} countries</h2><p class="empty">Hover over a highlighted country to preview it, or click it to keep its details here. Use the region buttons, scroll or drag to move around the map.</p>
+    <dl class="kv"><dt>Porting available</dt><dd>${DATA.COUNTRIES.filter(x=>x.portable==="yes").length}</dd><dt>Partial porting</dt><dd>${DATA.COUNTRIES.filter(x=>x.portable==="partial").length}</dd><dt>No porting</dt><dd>${DATA.COUNTRIES.filter(x=>x.portable==="no").length}</dd><dt>With PSTN prices</dt><dd>${DATA.COUNTRIES.filter(x=>x.rates).length}</dd></dl>`;
+  if(!c)return `<div class="eyebrow">Not covered yet</div><h2>${esc(name)}</h2><p class="empty">${esc(name)} isn't in the coverage matrix. Add it to the Domestic Voice ANR file on the Data files page and it will light up here.</p>`;
+  const k=c.rates,d=c.dom,pt=`<span class="pt ${c.portable}">${c.portable==="yes"?"Yes":c.portable==="no"?"No":"Partial"}</span>`;
+  return `<div class="eyebrow">${c.iso} · ${esc(c.dial||"")}</div><h2>${esc(c.name)}</h2>
+    <dl class="kv"><dt>Number range</dt><dd>${esc(c.range)||"–"}</dd><dt>Porting</dt><dd>${pt} ${esc(c.port.replace(/^(yes|no|partial)\s*[–-]\s*/i,""))}</dd></dl>
+    ${c.restr?`<h3>Restrictions</h3><p>${esc(c.restr)}</p>`:""}
+    <h3>Documents for new numbers</h3><p>${esc(c.newDocs)||"None listed"}</p>
+    <h3>Documents for porting</h3><p>${esc(c.portDocs)||"None listed"}</p>
+    <h3>GSIP prices (USD)</h3>${k?`<dl class="kv"><dt>Number</dt><dd>${money(k.numMRC)} a month, ${money(k.numNRC)} setup</dd><dt>Channel</dt><dd>${money(k.chMRC)} a month, ${money(k.chNRC)} setup</dd><dt>Country setup</dt><dd>${money(k.setup)} one time</dd></dl>`:`<p class="empty">No price in the GSIP price book yet.</p>`}
+    ${d?`<h3>Calls, per minute</h3><dl class="kv"><dt>Fixed</dt><dd>${rate(d.fixed)}</dd><dt>Mobile</dt><dd>${rate(d.mobile)}</dd><dt>Special</dt><dd>${rate(d.special)}</dd></dl>`:""}
+    ${c.src?`<p class="fine">Source: ${esc(c.src)}</p>`:""}
+    <button class="btn" id="mapgo">Start an order with ${esc(c.name)}</button>`;
+}
+async function bindMap(){
+  if(!DATA||!$("mapbox"))return;
+  const side=$("mapside");side.innerHTML=sideHTML(mapSel);
+  if(!await loadMap()){$("mapbox").innerHTML=`<p class="fine" style="padding:16px">The map couldn't load. The country list below still works.</p>`}
+  else{
+    $("mapbox").innerHTML=`<div class="maptools">${Object.keys(VIEWS).map(v=>`<button data-view="${v}" aria-pressed="${v==="World"}">${v}</button>`).join("")}</div>${mapSVG(false)}<div class="maptip" id="maptip" hidden></div>
+      <div class="maplegend"><span><i style="background:var(--accent)"></i>Service available (${DATA.COUNTRIES.length})</span><span><i style="background:var(--warn)"></i>Selected</span><span><i style="background:color-mix(in srgb,var(--todo) 28%,var(--surface))"></i>Not in the matrix</span></div>`;
+    const svg=$("wmap"),tip=$("maptip"),box=$("mapbox");let vb=[...VIEWS.World];
+    const setVB=v=>{vb=v;svg.setAttribute("viewBox",v.join(" "));const s=1000/v[2];svg.querySelectorAll("circle").forEach(c=>c.setAttribute("r",Math.max(1.2,4.5/Math.sqrt(s))))};
+    box.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{setVB([...VIEWS[b.dataset.view]]);box.querySelectorAll("[data-view]").forEach(x=>x.setAttribute("aria-pressed",x===b))});
+    const pt=e=>{const r=svg.getBoundingClientRect();return [vb[0]+(e.clientX-r.left)/r.width*vb[2],vb[1]+(e.clientY-r.top)/r.height*vb[3]]};
+    svg.addEventListener("wheel",e=>{e.preventDefault();const [x,y]=pt(e),f=e.deltaY>0?1.2:1/1.2,w=Math.min(1000,Math.max(40,vb[2]*f)),h=w/2;
+      setVB([x-(x-vb[0])*w/vb[2],y-(y-vb[1])*h/vb[3],w,h]);box.querySelectorAll("[data-view]").forEach(x=>x.setAttribute("aria-pressed","false"))},{passive:false});
+    let drag=null,moved=false;
+    svg.addEventListener("pointerdown",e=>{drag={x:e.clientX,y:e.clientY,vb:[...vb]};moved=false});
+    window.addEventListener("pointermove",e=>{if(!drag)return;const r=svg.getBoundingClientRect(),dx=(e.clientX-drag.x)/r.width*vb[2],dy=(e.clientY-drag.y)/r.height*vb[3];
+      if(Math.abs(e.clientX-drag.x)+Math.abs(e.clientY-drag.y)>4){moved=true;svg.classList.add("drag")}if(moved)setVB([drag.vb[0]-dx,drag.vb[1]-dy,vb[2],vb[3]])});
+    window.addEventListener("pointerup",()=>{drag=null;svg.classList.remove("drag")});
+    const show=(el,e)=>{const r=box.getBoundingClientRect();tip.hidden=false;tip.textContent=el.dataset.iso?country(el.dataset.iso).name:el.dataset.n;tip.style.left=(e.clientX-r.left)+"px";tip.style.top=(e.clientY-r.top)+"px"};
+    svg.addEventListener("pointermove",e=>{const el=e.target.closest("[data-iso],[data-n]");if(!el||drag&&moved){tip.hidden=true;return}show(el,e);
+      if(!mapSel&&el.dataset.iso)side.innerHTML=sideHTML(el.dataset.iso)});
+    svg.addEventListener("pointerleave",()=>{tip.hidden=true;if(!mapSel)side.innerHTML=sideHTML(null)});
+    svg.addEventListener("click",e=>{if(moved)return;const el=e.target.closest("[data-iso],[data-n]");if(!el)return;
+      if(el.dataset.iso){pick(el.dataset.iso);if(mapSel&&innerWidth<900)side.scrollIntoView({behavior:"smooth",block:"start"})}else{mapSel=null;mark();side.innerHTML=sideHTML(null,el.dataset.n);bindGo()}});
+    svg.addEventListener("keydown",e=>{const el=e.target.closest("[data-iso]");if(el&&(e.key==="Enter"||e.key===" ")){e.preventDefault();pick(el.dataset.iso)}});
+    svg.addEventListener("focusin",e=>{const el=e.target.closest("[data-iso]");if(el&&!mapSel)side.innerHTML=sideHTML(el.dataset.iso)});
+  }
+  function mark(){document.querySelectorAll("#wmap [data-iso]").forEach(x=>x.classList.toggle("sel",x.dataset.iso===mapSel));
+    document.querySelectorAll("#covlist [data-iso]").forEach(x=>x.setAttribute("aria-pressed",x.dataset.iso===mapSel))}
+  function bindGo(){const g=$("mapgo");if(g)g.onclick=()=>{const iso=mapSel;newOrder();picked.add(iso);location.hash="#order"}}
+  function pick(iso){mapSel=mapSel===iso?null:iso;mark();side.innerHTML=sideHTML(mapSel);bindGo()}
+  $("covlist").querySelectorAll("[data-iso]").forEach(b=>b.onclick=()=>{mapSel=null;pick(b.dataset.iso);if(innerWidth<900)side.scrollIntoView({behavior:"smooth",block:"start"})});
+  mark();bindGo();
+}
+async function drawTileMap(){const t=$("tilemap");if(!t)return;if(!DATA||!await loadMap())return;t.innerHTML=mapSVG(true);t.hidden=false}
+
+// ================= Home and routing =================
+const TILES=[
+ {id:"order",title:"Build your order",primary:true,desc:"Start the order journey: choose your solution, plan, countries and quantities.",
+  subs:[["order","Start a new order"],["quotes","My quotes"],["orders","Track my orders"]]},
+ {id:"coverage",title:"Coverage and documentation",desc:"Where service is available and what you need to prepare before ordering.",
+  subs:[["cov-map","Global coverage map"],["cov-countries","Country coverage and documents"],["cov-prepare","How to prepare"],["cov-porting","Number porting guide"]]},
+ {id:"faq",title:"Frequently asked questions",desc:"Common questions about ordering, pricing, numbers and support.",
+  subs:[["faq-ordering","Ordering"],["faq-billing","Pricing and billing"],["faq-numbers","Numbers and porting"],["faq-support","Support"]]},
+ {id:"tech",title:"Technical information",desc:"SKU codes, supported protocols, PoP locations and network requirements.",
+  subs:[["tech-sku","SKU codes"],["tech-protocols","Protocols and codecs"],["tech-pops","PoP locations"],["tech-network","Network requirements"]]}
+];
+$("tiles").innerHTML=TILES.map(t=>`<article class="tile${t.primary?" primary":""}"><div class="eyebrow">${t.primary?"Start here":"Reference"}</div><h2>${t.title}</h2><p>${t.desc}</p>${t.id==="coverage"?'<a class="tilemap" id="tilemap" href="#cov-map" aria-label="Open the global coverage map" hidden></a>':""}<ul>${t.subs.map(([h,l])=>`<li><a href="#${h}">${l}</a></li>`).join("")}</ul>${t.primary?'<a class="btn cta" href="#order">Build your order</a>':""}</article>`).join("");
+document.querySelectorAll('#tiles a[href="#order"]').forEach(a=>a.addEventListener("click",newOrder));
+function route(){
+  const h=(location.hash||"#home").slice(1);
+  const isDash=["dashboard","quotes","orders"].includes(h), isData=h==="data";
+  const tile=isDash||isData?null:TILES.find(t=>t.subs.some(s=>s[0]===h));
+  $("menu").querySelectorAll("[data-v]").forEach(a=>{const cur=a.dataset.v===h||(a.dataset.v==="home"&&!tile&&!isDash&&!isData);cur?a.setAttribute("aria-current","page"):a.removeAttribute("aria-current")});
+  $("v-dash").hidden=!isDash; $("v-data").hidden=!isData; $("v-home").hidden=isDash||isData||!!tile; $("v-order").hidden=h!=="order"; $("v-page").hidden=!tile||h==="order";
+  $("crumb").innerHTML="";
+  if(isDash){renderDash(h);window.scrollTo(0,0);return}
+  if(isData){renderDataPage();window.scrollTo(0,0);return}
+  if(!tile){drawTileMap();return}
+  const sub=tile.subs.find(s=>s[0]===h);
+  $("crumb").innerHTML=`<a href="#home">Home</a> / ${tile.title}${h==="order"?"":" / "+sub[1]}`;
+  if(h==="order")renderStep();
+  else{
+    const el=$("page"),cov=h==="cov-countries",map=h==="cov-map"; el.classList.toggle("wide",cov||map);
+    el.innerHTML=`<div class="eyebrow">${tile.title}</div><h1>${sub[1]}</h1><p>${cov||map?`${DATA?DATA.COUNTRIES.length+" countries from":"From"} the Domestic Voice ANR file. Update the file on the Data files page and this ${map?"map":"list"} follows.`:tile.desc}</p>${map?mapPageHTML():cov?coverageHTML():'<div class="todo">This page is a placeholder. We\'ll define its content together in a later step.</div>'}<nav class="sibs">${tile.subs.map(([id,l])=>`<a href="#${id}"${id===h?' aria-current="page"':""}>${l}</a>`).join("")}</nav>`;
+    if(cov)bindCoverage(); if(map)bindMap();
+  }
+  window.scrollTo(0,0);
+}
+window.addEventListener("hashchange",route);
+
+(async()=>{
+  route();
+  await loadData(); route();            // original files first, so the page never waits on the database
+  if(window.claude&&claude.use){
+    try{db=await claude.use("db")}catch(e){db=null}
+    try{const u=await claude.use("user");canEditData=!!(u&&db&&await u.canEdit())}catch(e){}
+    if(db){await loadData();route()}    // then swap in any updated files an editor uploaded
+  }
+})();
+</script>
+
+</body></html>

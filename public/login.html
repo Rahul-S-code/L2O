@@ -1,0 +1,32 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sign in · UC Order Hub</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/login.css"></head><body>
+<main class="card">
+  <a class="brand" href="/">UC Order Hub</a>
+  <h1 id="title">Sign in</h1>
+  <p class="lede" id="lede">Admins sign in to replace the Excel files the order flow reads.</p>
+  <form id="f">
+    <label id="ul">Username<input id="u" name="username" autocomplete="username"></label>
+    <label>Password<input id="p" name="password" type="password" autocomplete="current-password" required></label>
+    <button type="submit">Sign in</button>
+    <p class="err" id="err" role="alert"></p>
+  </form>
+  <p class="fine" id="alt"></p>
+</main>
+<script>
+const next=new URLSearchParams(location.search).get("next")||"/";
+const safeNext=/^\/(?!\/)/.test(next)?next:"/";
+fetch("/api/me").then(r=>r.json()).then(me=>{
+  if(me.gated&&!me.signedIn){
+    document.getElementById("lede").textContent="Enter the team password to open the UC Order Hub. Admins use their username and password.";
+    document.getElementById("u").placeholder="Leave empty unless you're an admin";
+  }
+}).catch(()=>{});
+document.getElementById("f").onsubmit=async e=>{
+  e.preventDefault();const err=document.getElementById("err");err.textContent="";
+  const r=await fetch("/api/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:document.getElementById("u").value.trim(),password:document.getElementById("p").value})});
+  const j=await r.json().catch(()=>({}));
+  if(r.ok)location.href=safeNext;else err.textContent=j.error||"That sign-in didn't work.";
+};
+</script></body></html>
