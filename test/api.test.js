@@ -1,24 +1,28 @@
-// Starts the server on a spare port with a throwaway storage folder and exercises the API.
+// Starts the server on a spare port, pointed at a stand-in GitHub, and exercises the API.
 const { test, before, after } = require("node:test");
 const assert = require("node:assert");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { fakeGitHub } = require("./fake-github");
 
 const PORT = 3900 + Math.floor(Math.random() * 90);
 const BASE = `http://127.0.0.1:${PORT}`;
 const DIR = fs.mkdtempSync(path.join(os.tmpdir(), "ucoh-"));
 let srv;
+const GH = fakeGitHub(), GH_PORT = PORT + 100;
 
 before(async () => {
+  await new Promise(r => GH.server.listen(GH_PORT, "127.0.0.1", r));
   srv = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], {
-    env: { ...process.env, PORT, DATA_DIR: DIR, ADMIN_USERS: "admin:s3cret", SESSION_SECRET: "test" }, stdio: "ignore"
+    env: { ...process.env, PORT, DATA_DIR: DIR, ADMIN_USERS: "admin:s3cret", SESSION_SECRET: "test",
+      GITHUB_API_URL: `http://127.0.0.1:${GH_PORT}`, GITHUB_REPO: GH.repo, GITHUB_TOKEN: GH.token, GITHUB_CHECK_SECONDS: "1" }, stdio: "ignore"
   });
   for (let i = 0; i < 50; i++) { try { await fetch(BASE + "/healthz"); return; } catch { await new Promise(r => setTimeout(r, 100)); } }
   throw new Error("server didn't start");
 });
-after(() => { srv.kill(); fs.rmSync(DIR, { recursive: true, force: true }); });
+after(() => { srv.kill(); GH.server.close(); fs.rmSync(DIR, { recursive: true, force: true }); });
 
 const json = (method, body, cookie) => ({ method, headers: { "Content-Type": "application/json", ...(cookie ? { cookie } : {}) }, body: JSON.stringify(body) });
 async function login() {
@@ -27,40 +31,45 @@ async function login() {
   return r.headers.get("set-cookie").split(";")[0];
 }
 
-test("serves the page and the original datasets", async () => {
+const plansXlsx = () => fs.readFileSync(path.join(__dirname, "..", "data", "tc-plans.xlsx"));
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+test("serves the page and the Excel files from GitHub", async () => {
   const page = await (await fetch(BASE + "/")).text();
   assert.match(page, /hosted\.js/);
-  const plans = await (await fetch(BASE + "/data/tc-plans.json")).json();
-  assert.ok(plans.Microsoft && plans.CISCO);
+  const r = await fetch(BASE + "/data/tc-plans.xlsx");
+  assert.equal(r.status, 200);
+  assert.ok(Buffer.from(await r.arrayBuffer()).equals(plansXlsx()));
+  assert.equal((await fetch(BASE + "/data/tc-plans.json")).status, 404); // no JSON copies any more
   assert.equal((await fetch(BASE + "/data/world-map.json")).status, 200);
+  const info = await (await fetch(BASE + "/api/datasets")).json();
+  assert.equal(info.repo, GH.repo); assert.equal(info.files.length, 6); assert.equal(info.canWrite, true);
+});
+
+test("a change made directly in GitHub reaches the app", async () => {
+  const changed = Buffer.concat([plansXlsx(), Buffer.from("x")]);
+  GH.files.set("tc-pops.xlsx", changed);
+  await sleep(1200);
+  assert.ok(Buffer.from(await (await fetch(BASE + "/data/tc-pops.xlsx")).arrayBuffer()).equals(changed));
 });
 
 test("wrong password is refused and non-admins can't upload", async () => {
   assert.equal((await fetch(BASE + "/api/login", json("POST", { username: "admin", password: "nope" }))).status, 401);
-  assert.equal((await fetch(BASE + "/api/datasets/plans", json("PUT", { sheetsJson: "{}", file: "UEs=" }))).status, 403);
-  assert.equal((await fetch(BASE + "/api/datasets/plans/file")).status, 403);
+  assert.equal((await fetch(BASE + "/api/datasets/plans", json("PUT", { file: "UEs=" }))).status, 403);
   assert.deepEqual(await (await fetch(BASE + "/api/me")).json(), { signedIn: false, user: null, admin: false, adminsConfigured: true, gated: false });
 });
 
-test("admin uploads a file, the page data follows, and reset restores the original", async () => {
+test("an admin upload is committed to GitHub and served from there", async () => {
   const c = await login();
-  assert.equal((await (await fetch(BASE + "/api/me", { headers: { cookie: c } })).json()).admin, true);
-  const xlsx = fs.readFileSync(path.join(__dirname, "..", "seed", "xlsx", "tc-plans.xlsx"));
-  const sheets = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "seed", "json", "tc-plans.json"), "utf8"));
-  sheets.Microsoft[12][1] = 9.99;
-  let r = await fetch(BASE + "/api/datasets/plans", json("PUT", { fileName: "plans v2.xlsx", sheetsJson: JSON.stringify(sheets), file: xlsx.toString("base64") }, c));
+  const v2 = Buffer.concat([plansXlsx(), Buffer.from("v2")]);
+  let r = await fetch(BASE + "/api/datasets/plans", json("PUT", { fileName: "plans v2.xlsx", file: v2.toString("base64") }, c));
   assert.equal(r.status, 200, await r.text());
-  assert.equal((await (await fetch(BASE + "/data/tc-plans.json")).json()).Microsoft[12][1], 9.99);
-  const meta = await (await fetch(BASE + "/api/datasets/plans")).json();
-  assert.equal(meta.uploaded, true); assert.equal(meta.fileName, "plans v2.xlsx"); assert.equal(meta.uploadedBy, "admin");
-  const dl = await fetch(BASE + "/api/datasets/plans/file", { headers: { cookie: c } });
-  assert.equal(Buffer.from(await dl.arrayBuffer()).equals(xlsx), true);
+  assert.ok(GH.files.get("tc-plans.xlsx").equals(v2));
+  assert.match(GH.commits.at(-1).message, /tc-plans\.xlsx.*uploaded by admin.*plans v2\.xlsx/);
+  assert.ok(Buffer.from(await (await fetch(BASE + "/data/tc-plans.xlsx")).arrayBuffer()).equals(v2));
   // not an Excel file
-  r = await fetch(BASE + "/api/datasets/plans", json("PUT", { sheetsJson: JSON.stringify(sheets), file: Buffer.from("hello").toString("base64") }, c));
+  r = await fetch(BASE + "/api/datasets/plans", json("PUT", { file: Buffer.from("hello").toString("base64") }, c));
   assert.equal(r.status, 400);
-  r = await fetch(BASE + "/api/datasets/plans", json("DELETE", {}, c));
-  assert.equal(r.status, 200);
-  assert.equal((await (await fetch(BASE + "/data/tc-plans.json")).json()).Microsoft[12][1], 1.5);
 });
 
 test("quotes are saved on the server", async () => {

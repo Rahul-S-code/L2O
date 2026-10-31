@@ -1,4 +1,4 @@
-# Render blueprint: one web service with a small persistent disk for uploaded Excel files and saved quotes.
+# Render blueprint: one web service. The Excel files are read from GitHub; the small disk keeps saved quotes.
 services:
   - type: web
     name: uc-order-hub
@@ -13,6 +13,10 @@ services:
       - key: SESSION_SECRET
         generateValue: true
       - key: ADMIN_USERS     # e.g. rahul:a-long-password,second-admin:another-password
+        sync: false
+      - key: GITHUB_REPO     # where the Excel files live (data/*.xlsx)
+        value: Rahul-S-code/L2O
+      - key: GITHUB_TOKEN    # fine-grained token with Contents read and write on that repo; lets admins upload from the app
         sync: false
       - key: VIEWER_PASSWORD # optional team password for everyone else; leave empty to keep the site open
         sync: false

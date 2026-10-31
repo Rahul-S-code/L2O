@@ -1,6 +1,6 @@
 // UC Order Hub web server.
-// Serves the order flow page, the six Excel-driven datasets, admin sign-in, Excel uploads and saved quotes.
-// Everything that changes at runtime lives under DATA_DIR, so mount a persistent disk there.
+// Serves the order flow page, the six Excel files from the GitHub repo, admin sign-in, Excel uploads (committed to GitHub)
+// and saved quotes. Saved quotes live under DATA_DIR, so mount a persistent disk there to keep them across restarts.
 const express = require("express");
 const crypto = require("crypto");
 const fs = require("fs");
@@ -8,7 +8,6 @@ const path = require("path");
 
 const PORT = +process.env.PORT || 3000;
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(__dirname, "storage"));
-const SEED = path.join(__dirname, "seed");
 const SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString("hex");
 const SECURE_COOKIE = process.env.COOKIE_SECURE ? process.env.COOKIE_SECURE === "true" : process.env.NODE_ENV === "production";
 const SESSION_HOURS = 12;
@@ -18,13 +17,11 @@ const ADMINS = Object.fromEntries((process.env.ADMIN_USERS || "").split(",").map
   .map(s => { const i = s.indexOf(":"); return [s.slice(0, i).trim(), s.slice(i + 1)]; }).filter(([u, p]) => u && p));
 const VIEWER_PASSWORD = process.env.VIEWER_PASSWORD || "";
 
-// Dataset key (as the page names it) -> file stem (as the page fetches it: data/<stem>.json)
+// Dataset key (as the page names it) -> file stem (data/<stem>.xlsx in the repo)
 const DATASETS = { plans: "tc-plans", anr: "domestic-voice-anr", pricebook: "pricebook-gsip", equipment: "equipment-skus", team: "delivery-team", pops: "tc-pops" };
 const MAX_XLSX_BYTES = 5 * 1024 * 1024;
-const MAX_SHEETS_JSON = 2 * 1024 * 1024;
 
-fs.mkdirSync(path.join(DATA_DIR, "datasets"), { recursive: true });
-fs.mkdirSync(path.join(DATA_DIR, "uploads"), { recursive: true });
+fs.mkdirSync(DATA_DIR, { recursive: true });
 
 function writeAtomic(file, text) {
   const tmp = file + "." + process.pid + ".tmp";
@@ -107,65 +104,105 @@ app.get("/api/me", (req, res) => res.json({
   adminsConfigured: Object.keys(ADMINS).length > 0, gated: !!VIEWER_PASSWORD
 }));
 
-// ---------- datasets ----------
-const metaFile = key => path.join(DATA_DIR, "datasets", key + ".json");
+// ---------- datasets: the Excel files in the GitHub repo ----------
+// The app reads data/<stem>.xlsx from GitHub and nothing else. The browser parses each workbook with the same
+// SheetJS code the prototype uses. An admin upload is committed to GitHub as a new version of the file.
+const GH_API = (process.env.GITHUB_API_URL || "https://api.github.com").replace(/\/$/, "");
+const GH_REPO = process.env.GITHUB_REPO || "Rahul-S-code/L2O";
+const GH_BRANCH = process.env.GITHUB_BRANCH || "main";
+const GH_DIR = (process.env.GITHUB_DATA_PATH || "data").replace(/^\/|\/$/g, "");
+const GH_TOKEN = process.env.GITHUB_TOKEN || "";
+// Without a token GitHub allows 60 requests an hour, so check for changes less often.
+const CHECK_MS = 1000 * (+process.env.GITHUB_CHECK_SECONDS || (GH_TOKEN ? 30 : 120));
+
+async function gh(pathname, { method = "GET", body, raw } = {}) {
+  const r = await fetch(GH_API + pathname, {
+    method,
+    headers: {
+      Accept: raw ? "application/vnd.github.raw" : "application/vnd.github+json",
+      "User-Agent": "uc-order-hub", "X-GitHub-Api-Version": "2022-11-28",
+      ...(GH_TOKEN ? { Authorization: "Bearer " + GH_TOKEN } : {}),
+      ...(body ? { "Content-Type": "application/json" } : {})
+    },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if (!r.ok) {
+    const j = await r.json().catch(() => ({}));
+    const e = new Error(`GitHub ${method} ${pathname}: ${r.status} ${j.message || ""}`.trim()); e.status = r.status; throw e;
+  }
+  return raw ? Buffer.from(await r.arrayBuffer()) : r.json();
+}
+const repoPath = `/repos/${GH_REPO}`;
+const fileName = key => DATASETS[key] + ".xlsx";
+
+// stem -> {sha, buf}; refreshed from one directory listing, files re-downloaded only when their sha changes.
+const cache = new Map();
+let checkedAt = 0, checking = null;
+function refresh(force) {
+  if (!force && Date.now() - checkedAt < CHECK_MS && cache.size) return Promise.resolve();
+  if (checking) return checking;
+  checking = (async () => {
+    const list = await gh(`${repoPath}/contents/${GH_DIR}?ref=${encodeURIComponent(GH_BRANCH)}`);
+    for (const key of Object.keys(DATASETS)) {
+      const f = list.find(x => x.type === "file" && x.name === fileName(key));
+      if (!f) { cache.delete(key); continue; }
+      if (cache.get(key)?.sha === f.sha) continue;
+      cache.set(key, { sha: f.sha, buf: await gh(`${repoPath}/git/blobs/${f.sha}`, { raw: true }) });
+    }
+    checkedAt = Date.now();
+  })().catch(e => { console.error("[github]", e.message); if (!cache.size) throw e; }).finally(() => { checking = null; });
+  return checking;
+}
+
 const validKey = (req, res, next) => DATASETS[req.params.key] ? next() : res.status(404).json({ error: "Unknown dataset." });
-function currentSheetsJson(key) {
-  const m = readJSON(metaFile(key), null);
-  return m ? m.sheetsJson : fs.readFileSync(path.join(SEED, "json", DATASETS[key] + ".json"), "utf8");
-}
+const XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
-// The page fetches data/<stem>.json; serve the uploaded copy when there is one, else the original.
+// The page asks for data/<stem>.xlsx (hosted.js turns it into the sheets the page expects).
 for (const [key, stem] of Object.entries(DATASETS)) {
-  app.get(`/data/${stem}.json`, (req, res) => { res.setHeader("Cache-Control", "no-store"); res.type("json").send(currentSheetsJson(key)); });
+  app.get(`/data/${stem}.xlsx`, async (req, res) => {
+    try { await refresh(); } catch (e) { return res.status(502).json({ error: "Couldn't read the Excel files from GitHub." }); }
+    const f = cache.get(key);
+    if (!f) return res.status(404).json({ error: `${GH_DIR}/${stem}.xlsx isn't in ${GH_REPO} (${GH_BRANCH}).` });
+    res.setHeader("Cache-Control", "no-store");
+    if (req.query.download !== undefined) res.attachment(stem + ".xlsx");
+    res.type(XLSX_TYPE).send(f.buf);
+  });
 }
 
-app.get("/api/datasets", (req, res) => res.json(Object.keys(DATASETS).map(key => {
-  const m = readJSON(metaFile(key), null);
-  return { key, uploaded: !!m, fileName: m?.fileName || DATASETS[key] + ".xlsx", uploadedAt: m?.uploadedAt || null, uploadedBy: m?.uploadedBy || null };
-})));
-
-app.get("/api/datasets/:key", validKey, (req, res) => {
-  const m = readJSON(metaFile(req.params.key), null);
-  res.setHeader("Cache-Control", "no-store");
-  res.json(m ? { uploaded: true, fileName: m.fileName, uploadedAt: m.uploadedAt, uploadedBy: m.uploadedBy, sheetsJson: m.sheetsJson } : { uploaded: false });
+// Where each file comes from and when it last changed, for the Data files page.
+let historyCache = { at: 0, list: null };
+app.get("/api/datasets", async (req, res) => {
+  if (!historyCache.list || Date.now() - historyCache.at > 5 * 60e3) {
+    historyCache = { at: Date.now(), list: await Promise.all(Object.keys(DATASETS).map(async key => {
+      const p = `${GH_DIR}/${fileName(key)}`;
+      const c = await gh(`${repoPath}/commits?path=${encodeURIComponent(p)}&sha=${encodeURIComponent(GH_BRANCH)}&per_page=1`).catch(() => []);
+      return { key, path: p, url: `https://github.com/${GH_REPO}/blob/${GH_BRANCH}/${p}`, historyUrl: `https://github.com/${GH_REPO}/commits/${GH_BRANCH}/${p}`,
+        changedAt: c[0]?.commit?.committer?.date || null, message: c[0]?.commit?.message || null };
+    })) };
+  }
+  res.json({ repo: GH_REPO, branch: GH_BRANCH, canWrite: !!GH_TOKEN, files: historyCache.list });
 });
 
-// Download the Excel file currently in use, so an admin can edit it and upload it again.
-app.get("/api/datasets/:key/file", validKey, requireAdmin, (req, res) => {
-  const key = req.params.key, m = readJSON(metaFile(key), null);
-  const file = m ? path.join(DATA_DIR, "uploads", m.stored) : path.join(SEED, "xlsx", DATASETS[key] + ".xlsx");
-  res.download(file, m ? m.fileName : DATASETS[key] + ".xlsx");
-});
-
-const isSheets = o => o && typeof o === "object" && !Array.isArray(o) && Object.values(o).every(rows =>
-  Array.isArray(rows) && rows.every(r => Array.isArray(r) && r.every(c => c === null || ["string", "number", "boolean"].includes(typeof c))));
-
-// The browser reads and checks the workbook (same parser the page uses), then sends the parsed sheets plus the original file.
-app.put("/api/datasets/:key", validKey, requireAdmin, (req, res) => {
-  const key = req.params.key, { fileName, sheetsJson, file } = req.body || {};
-  if (typeof sheetsJson !== "string" || sheetsJson.length > MAX_SHEETS_JSON) return res.status(400).json({ error: "Missing or oversized sheet data." });
-  let sheets; try { sheets = JSON.parse(sheetsJson); } catch { return res.status(400).json({ error: "Sheet data isn't valid JSON." }); }
-  if (!isSheets(sheets)) return res.status(400).json({ error: "Sheet data has an unexpected shape." });
-  const buf = Buffer.from(String(file || ""), "base64");
+// An admin upload becomes a commit to the file in GitHub.
+app.put("/api/datasets/:key", validKey, requireAdmin, async (req, res) => {
+  if (!GH_TOKEN) return res.status(503).json({ error: `Uploading needs a GitHub token on the server. For now, upload the file to ${GH_DIR}/ in ${GH_REPO} on GitHub.` });
+  const key = req.params.key, buf = Buffer.from(String((req.body || {}).file || ""), "base64");
   if (!buf.length || buf.length > MAX_XLSX_BYTES) return res.status(400).json({ error: "Attach the Excel file (5 MB at most)." });
-  const isZip = buf[0] === 0x50 && buf[1] === 0x4b, isOle = buf.readUInt32BE(0) === 0xd0cf11e0;
-  if (!isZip && !isOle) return res.status(400).json({ error: "That doesn't look like an Excel file." });
-  const name = String(fileName || DATASETS[key] + ".xlsx").replace(/[^\w .()-]+/g, "_").slice(0, 120);
-  const uploadedAt = new Date().toISOString();
-  // Every upload is kept, so an earlier version can be recovered from the disk.
-  const stored = `${key}-${uploadedAt.replace(/[:.]/g, "-")}${isZip ? ".xlsx" : ".xls"}`;
-  fs.writeFileSync(path.join(DATA_DIR, "uploads", stored), buf);
-  writeAtomic(metaFile(key), JSON.stringify({ fileName: name, uploadedAt, uploadedBy: req.session.user, stored, sheetsJson }));
-  console.log(`[dataset] ${key} replaced with ${name} by ${req.session.user}`);
-  res.json({ ok: true, fileName: name, uploadedAt });
-});
-
-// Go back to the original file (uploaded copies stay on disk).
-app.delete("/api/datasets/:key", validKey, requireAdmin, (req, res) => {
-  try { fs.unlinkSync(metaFile(req.params.key)); } catch {}
-  console.log(`[dataset] ${req.params.key} reset to original by ${req.session.user}`);
-  res.json({ ok: true });
+  if (!(buf[0] === 0x50 && buf[1] === 0x4b)) return res.status(400).json({ error: "Save the file as .xlsx and upload it again." });
+  try {
+    await refresh(true);
+    const p = `${GH_DIR}/${fileName(key)}`, from = String(req.body.fileName || "").replace(/[^\w .()-]+/g, "_").slice(0, 120);
+    const out = await gh(`${repoPath}/contents/${p}`, { method: "PUT", body: {
+      message: `Update ${fileName(key)} from the UC Order Hub (uploaded by ${req.session.user}${from ? ", file " + from : ""})`,
+      content: buf.toString("base64"), branch: GH_BRANCH, ...(cache.get(key) ? { sha: cache.get(key).sha } : {})
+    } });
+    cache.set(key, { sha: out.content.sha, buf }); historyCache.at = 0;
+    console.log(`[dataset] ${p} committed to ${GH_REPO} by ${req.session.user}`);
+    res.json({ ok: true, commit: out.commit.html_url });
+  } catch (e) {
+    console.error("[github]", e.message);
+    res.status(502).json({ error: e.status === 409 ? "The file changed in GitHub meanwhile. Reload the page and upload again." : "GitHub didn't accept the file: " + e.message });
+  }
 });
 
 // ---------- saved quotes (shared by everyone using this site) ----------
@@ -189,4 +226,6 @@ app.listen(PORT, () => {
   console.log(`UC Order Hub on port ${PORT}, storage in ${DATA_DIR}`);
   if (!Object.keys(ADMINS).length) console.warn("No ADMIN_USERS set: nobody can upload Excel files.");
   if (!process.env.SESSION_SECRET) console.warn("No SESSION_SECRET set: sign-ins end whenever the server restarts.");
+  console.log(`Excel files from ${GH_REPO}@${GH_BRANCH}/${GH_DIR}` + (GH_TOKEN ? "" : " (no GITHUB_TOKEN: read-only, public repo only)"));
+  refresh(true).catch(() => {});
 });
