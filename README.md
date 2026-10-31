@@ -11,6 +11,18 @@ The UC lead-to-order flow (GSIP, Microsoft, Cisco, Zoom) as its own website. Cou
 - **Saved quotes**: "Save as quote" stores the quote on the server, shared by everyone on the site.
 - **Optional team password**: set `VIEWER_PASSWORD` and nobody can see the site or its prices without signing in.
 
+## The free website (GitHub Pages)
+
+Every push to `main` publishes the site to GitHub Pages (`.github/workflows/pages.yml`), at https://rahul-s-code.github.io/L2O/. It's the same order flow, coverage map and Excel quote download, reading the Excel files in `data/` from that commit. It has no server, so:
+
+- Change prices by editing an Excel file in `data/` on GitHub and committing it; the site updates a minute or two later.
+- There's no admin sign-in or upload page.
+- Saved quotes stay in each person's own browser.
+
+One-time setup: **Settings > Pages > Build and deployment > Source: GitHub Actions**.
+
+The server version below adds sign-in, uploads from the site and shared quotes, for when you want those.
+
 ## Settings (environment variables)
 
 | Variable | Needed | What it does |
@@ -60,7 +72,8 @@ The script swaps the two CDN libraries for the local copies in `public/vendor/` 
 data/*.xlsx         the Excel files the app reads (from GitHub)
 server.js           web server: Excel files from GitHub, sign-in, uploads, quotes
 public/index.html   the order flow page (from the prototype)
-public/hosted.js    connects the page to this server and parses the Excel files
+public/hosted.js    connects the page to this server (or runs it static on Pages) and parses the Excel files
+.github/workflows/  publishes the static site to GitHub Pages
 public/login.html   sign-in page
 public/vendor/      SheetJS 0.18.5 and ExcelJS 4.4.0
 test/               API tests and a stand-in GitHub

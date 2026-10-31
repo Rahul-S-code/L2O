@@ -7,7 +7,13 @@
 //   user      -> canEdit() is true for a signed-in admin
 //   downloads -> save() downloads the file in the browser
 // Saved quotes (localStorage "ucoh.quotes.v3" in the artifact) are kept on the server and shared by everyone.
+//
+// The same page also runs as a plain website on GitHub Pages (hosted-config.js sets window.UCOH.mode = "static").
+// There it reads the Excel files published with the site from the repo, has no sign-in or uploads (files are
+// changed in GitHub), and keeps saved quotes in each person's browser as the prototype does.
 (function () {
+  const CFG = window.UCOH || { mode: "server" };
+  const STATIC = CFG.mode === "static";
   async function api(method, url, body) {
     const r = await fetch(url, { method, credentials: "same-origin", headers: body ? { "Content-Type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
     const j = await r.json().catch(() => ({}));
@@ -15,7 +21,7 @@
     return j;
   }
   let me = { admin: false };
-  const meReady = api("GET", "/api/me").then(j => (me = j)).catch(() => me);
+  const meReady = STATIC ? Promise.resolve(me) : api("GET", "/api/me").then(j => (me = j)).catch(() => me);
 
   // ---------- Excel files from GitHub ----------
   const KEYS = ["plans", "anr", "pricebook", "equipment", "team", "pops"]; // same order as DATASETS in the page
@@ -32,7 +38,12 @@
   };
   let gh = null;
   const savedTo = {};
-  const loadGh = () => api("GET", "/api/datasets").then(j => { gh = j; decorateData(); }).catch(() => {});
+  const staticGh = () => ({ repo: CFG.repo, branch: CFG.branch, canWrite: false, files: KEYS.map((key, i) => {
+    const p = `data/${["tc-plans", "domestic-voice-anr", "pricebook-gsip", "equipment-skus", "delivery-team", "tc-pops"][i]}.xlsx`;
+    return { key, path: p, url: `https://github.com/${CFG.repo}/blob/${CFG.branch}/${p}`, historyUrl: `https://github.com/${CFG.repo}/commits/${CFG.branch}/${p}`, changedAt: null };
+  }) });
+  const loadGh = () => STATIC ? Promise.resolve().then(() => { gh = staticGh(); decorateData(); })
+    : api("GET", "/api/datasets").then(j => { gh = j; decorateData(); }).catch(() => {});
 
   // The page parses the chosen workbook itself; remember the original file so it can be committed to GitHub.
   const picked = {};
@@ -74,43 +85,45 @@
       setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
     }
   };
-  window.claude = { use: async name => ({ db, user, downloads })[name] || null };
+  window.claude = { use: async name => (STATIC ? { user, downloads } : { db, user, downloads })[name] || null };
 
-  // ---------- saved quotes on the server ----------
-  const QK = "ucoh.quotes.v3";
-  let quotes = [], pulledAt = 0;
-  function pull() {
-    // Synchronous on purpose: the page reads saved quotes synchronously. Refreshed at most every 2 seconds.
-    if (Date.now() - pulledAt < 2000) return;
-    try {
-      const x = new XMLHttpRequest();
-      x.open("GET", "/api/quotes", false); x.send();
-      if (x.status === 200) { quotes = JSON.parse(x.responseText); pulledAt = Date.now(); }
-    } catch (e) { console.warn("Couldn't load saved quotes", e); }
-  }
-  const getItem = Storage.prototype.getItem, setItem = Storage.prototype.setItem;
-  let local = null; try { local = window.localStorage; } catch (e) {}
-  Storage.prototype.getItem = function (k) {
-    if (this === local && k === QK) { pull(); return JSON.stringify(quotes); }
-    return getItem.call(this, k);
-  };
-  Storage.prototype.setItem = function (k, v) {
-    if (this === local && k === QK) {
-      const next = JSON.parse(v), before = new Map(quotes.map(q => [q.ref, JSON.stringify(q)]));
-      quotes = next;
-      next.forEach(q => {
-        if (before.get(q.ref) !== JSON.stringify(q))
-          api("PUT", "/api/quotes/" + encodeURIComponent(q.ref), q).catch(e => alert("The quote couldn't be saved to the server: " + e.message));
-      });
-      return;
+  // ---------- saved quotes on the server (the static site keeps them in the browser) ----------
+  if (!STATIC) {
+    const QK = "ucoh.quotes.v3";
+    let quotes = [], pulledAt = 0;
+    function pull() {
+      // Synchronous on purpose: the page reads saved quotes synchronously. Refreshed at most every 2 seconds.
+      if (Date.now() - pulledAt < 2000) return;
+      try {
+        const x = new XMLHttpRequest();
+        x.open("GET", "/api/quotes", false); x.send();
+        if (x.status === 200) { quotes = JSON.parse(x.responseText); pulledAt = Date.now(); }
+      } catch (e) { console.warn("Couldn't load saved quotes", e); }
     }
-    return setItem.call(this, k, v);
-  };
+    const getItem = Storage.prototype.getItem, setItem = Storage.prototype.setItem;
+    let local = null; try { local = window.localStorage; } catch (e) {}
+    Storage.prototype.getItem = function (k) {
+      if (this === local && k === QK) { pull(); return JSON.stringify(quotes); }
+      return getItem.call(this, k);
+    };
+    Storage.prototype.setItem = function (k, v) {
+      if (this === local && k === QK) {
+        const next = JSON.parse(v), before = new Map(quotes.map(q => [q.ref, JSON.stringify(q)]));
+        quotes = next;
+        next.forEach(q => {
+          if (before.get(q.ref) !== JSON.stringify(q))
+            api("PUT", "/api/quotes/" + encodeURIComponent(q.ref), q).catch(e => alert("The quote couldn't be saved to the server: " + e.message));
+        });
+        return;
+      }
+      return setItem.call(this, k, v);
+    };
+  }
 
   // ---------- small additions to the page ----------
   const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   function addSignIn() {
-    const menu = document.getElementById("menu"); if (!menu) return;
+    const menu = document.getElementById("menu"); if (!menu || STATIC) return;
     const a = document.createElement("a");
     if (me.admin) {
       a.href = "#"; a.textContent = `Sign out (${me.user})`;
@@ -126,7 +139,10 @@
     const v = document.getElementById("v-data"); if (!v) return;
     v.querySelectorAll("p.fine").forEach(p => {
       if (/^Only editors of this page/.test(p.textContent)) p.innerHTML = `Only admins can replace files. <a href="/login?next=${encodeURIComponent("/#data")}">Sign in as an admin</a>.`;
-      if (/^Uploading is unavailable/.test(p.textContent)) p.remove();
+      if (/^Uploading is unavailable/.test(p.textContent)) {
+        if (STATIC && gh) p.innerHTML = `To change a file, open it in GitHub (links below), upload the new version and commit it. This page updates a minute or two later.`;
+        else if (!STATIC) p.remove();
+      }
     });
     v.querySelectorAll("[data-reset]").forEach(b => b.remove());
     if (!gh) return;
@@ -147,13 +163,15 @@
       if (!box) { panel.querySelector(".dsmsg").insertAdjacentHTML("beforebegin", '<div class="dsa"></div>'); box = panel.querySelector(".dsa"); }
       if (me.admin && !gh.canWrite) box.querySelectorAll("label.up").forEach(l => l.remove());
       if (!box.querySelector("[data-dl]")) box.insertAdjacentHTML("beforeend",
-        `<a class="act" data-dl="1" href="/${esc(f.path.replace(/^.*\//, "data/"))}?download">Download the Excel file</a>` +
+        `<a class="act" data-dl="1" href="${esc(f.path.replace(/^.*\//, "data/"))}${STATIC ? '" download="' : "?download"}">Download the Excel file</a>` +
         `<a class="act" href="${esc(f.historyUrl)}" target="_blank" rel="noopener">Version history in GitHub</a>`);
     });
     const lede = v.querySelector(".lede");
     if (lede && !lede.dataset.gh) {
       lede.dataset.gh = "1";
-      lede.textContent = `The order flow reads its countries, plans and prices from these Excel files in the ${gh.repo} GitHub repository. To change a price or add a country, edit the file and upload it here${gh.canWrite ? "" : " or in GitHub"}; it's saved to GitHub as a new version. Keep the same sheet names and column headings.`;
+      lede.textContent = STATIC
+        ? `The order flow reads its countries, plans and prices from these Excel files in the ${gh.repo} GitHub repository. To change a price or add a country, edit the file and commit it to GitHub. Keep the same sheet names and column headings.`
+        : `The order flow reads its countries, plans and prices from these Excel files in the ${gh.repo} GitHub repository. To change a price or add a country, edit the file and upload it here${gh.canWrite ? "" : " or in GitHub"}; it's saved to GitHub as a new version. Keep the same sheet names and column headings.`;
     }
   }
   document.addEventListener("DOMContentLoaded", async () => {

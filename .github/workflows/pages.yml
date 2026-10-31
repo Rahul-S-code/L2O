@@ -1,0 +1,42 @@
+# Publishes the UC Order Hub as a plain website on GitHub Pages, with the Excel files from data/.
+# Runs on every push to main, so a changed Excel file is live a minute or two after it's committed.
+# One-time setup: repository Settings > Pages > Build and deployment > Source: GitHub Actions.
+name: Publish website
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the site
+        run: |
+          mkdir -p _site
+          cp -r public/. _site/
+          rm -f _site/login.html _site/login.css
+          cp data/*.xlsx _site/data/
+          printf 'window.UCOH = { mode: "static", repo: "%s", branch: "%s" };\n' "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" > _site/hosted-config.js
+          touch _site/.nojekyll
+          ls -R _site | head -40
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deploy
+        uses: actions/deploy-pages@v4

@@ -70,6 +70,8 @@ app.use("/api", (req, res, next) => {
 
 app.get("/healthz", (req, res) => res.json({ ok: true }));
 app.get("/favicon.ico", (req, res) => res.status(204).end());
+// On GitHub Pages this file says the site is static; here it says there is a server.
+app.get("/hosted-config.js", (req, res) => res.type("js").send('window.UCOH = { mode: "server" };\n'));
 
 // Sign-in
 const attempts = new Map();
