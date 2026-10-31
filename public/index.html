@@ -286,6 +286,7 @@ table.qty select{padding:7px 8px;border:1px solid var(--line);border-radius:7px;
 .say{margin:0;font-size:14px;background:var(--bg);border-left:3px solid var(--accent);padding:8px 12px;border-radius:0 8px 8px 0}
 .btn.ghost{background:transparent;color:var(--accent);border:1.5px solid var(--accent);padding:8px 16px}
 .rtg{display:grid;gap:8px}
+table.qty th small{display:block;text-transform:none;letter-spacing:0;font-size:11.5px;color:var(--muted)}
 </style>
 
 <header class="top"><a class="brand" href="#home">UC Order Hub</a>
@@ -325,7 +326,7 @@ table.qty select{padding:7px 8px;border:1px solid var(--line);border-radius:7px;
     <div class="eyebrow">Lead to order</div>
     <h2>The customer journey</h2>
     <ol id="rail"></ol>
-    <p class="note">Steps 1 to 10 are built. Countries, plans and prices are read from your Excel files (see Data files).</p>
+    <p class="note">Steps 1 to 11 are built. Countries, plans and prices are read from your Excel files (see Data files).</p>
   </aside>
 
   <main class="app">
@@ -454,9 +455,9 @@ function parseAZ(rows){
 function parseSKUs(rows){
   const hi=findRow(rows,c=>/sku code/i.test(c)); if(hi<0)throw new Error('SKU sheet: no "SKU code" header');
   const H=rows[hi].map(txt), col=re=>H.findIndex(h=>re.test(h));
-  const c={code:col(/sku code/i),cat:col(/^category/i),name:col(/sku name/i),desc:col(/^description/i),tier:col(/plan tier/i),uom:col(/unit of measure/i),charge:col(/charge type/i),term:col(/min.*term/i),price:col(/list price|price/i)};
+  const c={code:col(/sku code/i),cat:col(/^category/i),name:col(/sku name/i),desc:col(/^description/i),tier:col(/plan tier/i),uom:col(/unit of measure/i),charge:col(/charge type/i),term:col(/min.*term/i),price:col(/list price|price/i),ships:col(/ships? to site|shippable|needs shipping/i)};
   if(c.price<0)throw new Error('SKU sheet: no price column');
-  return rows.slice(hi+1).filter(r=>/^[A-Z]{2}-/.test(txt(r[c.code]))).map(r=>({code:txt(r[c.code]),cat:txt(r[c.cat]),name:txt(r[c.name]),desc:txt(r[c.desc]),tier:txt(r[c.tier]),uom:txt(r[c.uom]),charge:txt(r[c.charge]),term:txt(r[c.term]),price:num(r[c.price])}));
+  return rows.slice(hi+1).filter(r=>/^[A-Z]{2}-/.test(txt(r[c.code]))).map(r=>({code:txt(r[c.code]),cat:txt(r[c.cat]),name:txt(r[c.name]),desc:txt(r[c.desc]),tier:txt(r[c.tier]),uom:txt(r[c.uom]),charge:txt(r[c.charge]),term:txt(r[c.term]),price:num(r[c.price]),ships:c.ships<0||!txt(r[c.ships])?null:/^y/i.test(txt(r[c.ships]))}));
 }
 function buildModel(){
   const issues=[];
@@ -515,6 +516,12 @@ const optDef=k=>(opt(k).find(x=>x.def)||opt(k)[0]||{name:""}).name;
 function defaultPops(iso){const l=DATA.POPS.filter(p=>p.region===regionOf(iso)).sort((a,b)=>(a.iso===iso?0:1)-(b.iso===iso?0:1)||a.rank-b.rank);
   const all=l.length?l:DATA.POPS;return [all[0]&&all[0].code,(all[1]||all[0]||{}).code]}
 function platformNames(){
+  const L=S.links||{plat:[],opr:[]},mineRe=PLATFORM_FOR[S.sol];
+  const extra=[...new Set(L.plat.map(x=>DATA.EQUIP.find(k=>k.code===x.code)).filter(k=>k&&!(mineRe&&mineRe.test(k.name))).map(platLabel))];
+  const oprs=L.opr.map((x,i)=>`${x.operator.trim()||"Operator "+(i+1)}${x.iso?" ("+x.iso+")":""} operator connection`);
+  return [...basePlatformNames(),...extra,...oprs];
+}
+function basePlatformNames(){
   const pick=(re,fb)=>((opt("platform connector").find(x=>re.test(x.name))||{}).name)||fb;
   if(S.sol==="ms"){const oc=pick(/operator connect/i,"Microsoft Operator Connect"),dr=pick(/direct routing/i,"Microsoft Teams Direct Routing (DRaaS)");
     return S.variant===HYBRID?[oc,dr]:/direct/i.test(S.variant||"")?[dr]:[oc]}
@@ -564,7 +571,7 @@ function stepRouting(){
   const popInfo=code=>{const p=pop(code);return p?`<div><b>${esc(p.city)}</b> <code>${esc(p.ip)}</code><small>Media ${esc(p.media)} · ${esc(p.ports)}</small></div>`:""};
   const countries=[...new Set([...picked,...DATA.COUNTRIES.map(c=>c.iso)])];
   const card=c=>{
-    if(c.kind==="platform")return `<div class="conn plat"><div class="connh"><b>${esc(c.name)}</b><span class="pill">Platform connector</span></div><p class="fine">Added because of the solution you chose. Tata Communications sets up this connection with the platform from its own PoPs, so there's nothing to configure here.</p></div>`;
+    if(c.kind==="platform")return `<div class="conn plat"><div class="connh"><b>${esc(c.name)}</b><span class="pill">Platform connector</span></div><p class="fine">Added from the solution and the platform and operator connections on the equipment step. Tata Communications sets up this connection from its own PoPs, so there's nothing to configure here.</p></div>`;
     const iss=connIssues(c),r=opt("routing").find(x=>x.name===c.routing),e=opt("encryption").find(x=>x.name===c.enc);
     return `<div class="conn" data-card="${c.id}"><div class="connh"><input class="cname" data-c="${c.id}" data-f="name" value="${esc(c.name)}" aria-label="Connector name"><span class="pill">${c.iso?regionOf(c.iso):"Site"} · 2 links</span><button class="act" data-del="${c.id}">Remove</button></div>
       <div class="cgrid">
@@ -612,7 +619,6 @@ function stepRouting(){
       };
     rt.onclick=e=>{const b=e.target.closest("button");if(!b)return;const d=b.dataset;
       if(b.id==="addc"){S.connectors.push(newSite());draw()}
-      else if(b.id==="addk"&&S.connectors.length>=2){S.clusters.push({id:newId("k"),name:`Cluster ${S.clusters.length+1}`,mode:optDef("cluster mode"),scope:"all",countries:[],members:S.connectors.slice(0,2).map(c=>c.id)});draw()}
       else if(d.del){S.connectors=S.connectors.filter(c=>c.id!==d.del);syncConnectors();draw()}
       else if(d.kdel){S.clusters=S.clusters.filter(k=>k.id!==d.kdel);draw()}
       else if(d.up||d.down){const [k,i]=(d.up||d.down).split(":"),m=K(k).members,j=+i+(d.up?-1:1);[m[i],m[j]]=[m[j],m[i]];draw()}
@@ -631,9 +637,9 @@ const SOLUTIONS=[
 ];
 const STEPS=[["Solution","GSIP, Microsoft, Cisco or Zoom."],["Plan","Connection type and service plan."],["Countries","Where the customer needs service."],
   ["Quantities","Numbers, channels, users and sites per country."],["Summary","Plan, quantities and quotation."],["Equipment","SBCs, ATAs and other add-ons."],["Connectors and routing","Customer sites, Tata PoPs and failover clusters."],["Delivery team","Day 1 project team and Day 2 support."],
-  ["Company and contact","Who the quote is for."],["Quotation","The final quote, linked to the customer."],["Order and provisioning","Orchestration layer sends the order to each vendor."]];
-const LAST_BUILT=9;
-const S={step:0,sol:null,variant:null,plan:null,picked:new Set(),qty:{},addons:{},team:{},sdm:{},cust:EMPTY_CUST(),regions:{},conn:{},connectors:[],clusters:[]};
+  ["Company and contact","Who the quote is for."],["Quotation","The final quote, linked to the customer."],["Order enrichment","Where to ship equipment and which entity takes it."],["Order and provisioning","Orchestration layer sends the order to each vendor."]];
+const LAST_BUILT=10;
+const S={step:0,sol:null,variant:null,plan:null,picked:new Set(),qty:{},addons:{},team:{},sdm:{},cust:EMPTY_CUST(),regions:{},conn:{},connectors:[],clusters:[],ship:EMPTY_SHIP(),links:null};
 const picked=S.picked;
 const sol=()=>SOLUTIONS.find(x=>x.id===S.sol);
 const HYBRID="Best of both (by country)",CONN=["Operator Connect","Direct Routing as a Service"];
@@ -655,7 +661,7 @@ function renderStep(){
   $("next").textContent=S.step===LAST_BUILT?"Place order":`Continue to ${STEPS[S.step+1][0].toLowerCase()}`;
   if(!DATA){$("o-title").textContent=dataErr?"The data files couldn't be read":"Loading data files";
     $("o-lede").textContent=dataErr?dataErr:"Reading plans, countries and the price book.";$("o-body").innerHTML=dataErr?`<div class="todo">Open <a href="#data">Data files</a> to check or replace the Excel files.</div>`:"";update();return}
-  [stepSolution,stepPlan,stepCountries,stepQuantities,stepSummary,stepAddons,stepRouting,stepTeam,stepCustomer,stepQuote][S.step]();
+  [stepSolution,stepPlan,stepCountries,stepQuantities,stepSummary,stepAddons,stepRouting,stepTeam,stepCustomer,stepQuote,stepShip][S.step]();
   update();
 }
 function stepSolution(){
@@ -785,7 +791,7 @@ function stepSummary(){
 // ---- Equipment and add-ons (from the SKU sheet) ----
 const PLATFORM_FOR={ms:/teams/i,cisco:/webex/i,zoom:/zoom/i};
 function skuAvailable(k){
-  if(/platform connection/i.test(k.cat)){const re=PLATFORM_FOR[S.sol];if(!re||!re.test(k.name))return {show:false}}
+  if(/platform connection|operator connection/i.test(k.cat))return {show:true,ok:true};
   if(/all/i.test(k.tier)||!k.tier)return {show:true,ok:true};
   const P=plans(),pn=P&&S.plan!=null?P.names[S.plan]:"";
   const ok=!!pn&&(k.tier.toLowerCase().includes(pn.toLowerCase())||(pn==="Standard"&&/control/i.test(k.tier)));
@@ -821,8 +827,19 @@ function rulesFor(){
   if(inst)r.push({code:inst.code,exact:st.instances,why:`One setup per regional SBC instance (${st.instances})`});
   if(ataI)r.push({code:ataI.code,min:st.atas,why:`At least one installation per ATA (${st.atas} ATA${st.atas===1?"":"s"})`});
   if(lcs)r.push({code:lcs.code,min:st.osbc,why:`At least one lifecycle bundle per on-prem SBC (${st.osbc})`});
+  const L=ensureLinks();
+  DATA.EQUIP.filter(k=>isPlatSku(k)||isOprSku(k)).forEach(k=>{const n=(isPlatSku(k)?L.plat:L.opr).filter(x=>x.code===k.code).length;
+    r.push({code:k.code,exact:n,why:`${n} connection${n===1?"":"s"} added below`})});
   return r;
 }
+// Platform and operator connections are added one at a time on the equipment step; each one is a priced SKU line.
+const isPlatSku=k=>/platform connection/i.test(k.cat),isOprSku=k=>/operator connection/i.test(k.cat);
+function ensureLinks(){
+  if(S.links)return S.links;
+  S.links={plat:[],opr:[]};   // older quotes: turn typed quantities into connections
+  DATA.EQUIP.forEach(k=>{const q=S.addons[k.code]||0;for(let i=0;i<q;i++){if(isPlatSku(k))S.links.plat.push({id:newId("pl"),code:k.code});if(isOprSku(k))S.links.opr.push({id:newId("op"),code:k.code,operator:"",iso:""})}});
+  return S.links}
+const platLabel=k=>k.name.replace(/^platform connection\s*[–-]\s*/i,"");
 function applyRules(){rulesFor().forEach(x=>{const cur=S.addons[x.code]||0;S.addons[x.code]=x.exact!=null?x.exact:Math.max(cur,x.min)})}
 function stepAddons(){
   S.regions=S.regions||{};applyRules();
@@ -832,7 +849,19 @@ function stepAddons(){
   const helper=k=>/per user/i.test(k.uom)&&!/CSBC-ESS/.test(k.code)?`<button class="act" data-fill="${k.code}" data-v="${R.t.users}">Match users (${int(R.t.users)})</button>`:/per tenant/i.test(k.uom)&&!/CSBC-INST/.test(k.code)?`<button class="act" data-fill="${k.code}" data-v="1">Add 1</button>`:"";
   const regionPanel=`<div class="regions"><div><b>Cloud SBC sessions by region</b><p class="fine">How many concurrent sessions does the customer need in each region? Each region with sessions gets its own SBC instance.</p></div>
     <div class="regf">${REGIONS.map(r=>`<label class="fld" for="rg-${r}"><span>${r}</span><input type="number" min="0" id="rg-${r}" data-region="${r}" value="${S.regions[r]||0}"></label>`).join("")}</div><p class="fine" id="regsum"></p></div>`;
+  const linkPanel=cat=>{const L=ensureLinks(),skus=DATA.EQUIP.filter(k=>k.cat===cat),plat=isPlatSku(skus[0]),list=plat?L.plat:L.opr;
+    const mine=plat?skus.find(k=>PLATFORM_FOR[S.sol]&&PLATFORM_FOR[S.sol].test(k.name)):null;
+    const opts=cur=>skus.map(k=>`<option value="${esc(k.code)}"${k.code===cur?" selected":""}>${esc(plat?platLabel(k):k.name)} · ${money(k.price)} ${esc(k.charge)}</option>`).join("");
+    const iso=[...new Set([...picked,...DATA.COUNTRIES.map(x=>x.iso)])];
+    return `<div class="section"><h3>${esc(cat)}s</h3><p class="fine">${plat?`Connect Tata voice to each platform the customer uses, such as their calling platform and contact centres. Add one connection per platform.${mine?` ${esc(platLabel(mine))} matches the solution you chose.`:""}`:"Connect to other telecom operators where the customer keeps an existing carrier or Tata has no domestic PSTN. Add one connection per operator."}</p>
+      <div class="skus">${list.map((x,i)=>{const k=DATA.EQUIP.find(s=>s.code===x.code)||skus[0];return `<div class="sku on"><div class="skuh"><div><b>${plat?"Platform":"Operator"} connection ${i+1}</b><code>${esc(k.code)}</code></div><div class="skup"><b>${money(k.price)}</b><small>${esc(k.uom)} · ${esc(k.charge)}</small></div></div>
+        <div class="form">${plat||skus.length>1?`<label class="fld"><span>${plat?"Platform":"Connection type"}</span><select data-link="${plat?"plat":"opr"}" data-id="${x.id}" data-k="code">${opts(x.code)}</select></label>`:""}
+          ${plat?"":`<label class="fld"><span>Operator name</span><input data-link="opr" data-id="${x.id}" data-k="operator" value="${esc(x.operator)}" placeholder="e.g. BT, Vodafone, AT&amp;T"></label>
+          <label class="fld"><span>Country</span><select data-link="opr" data-id="${x.id}" data-k="iso"><option value="">Choose</option>${iso.map(i=>`<option value="${i}"${x.iso===i?" selected":""}>${esc(country(i).name)}</option>`).join("")}</select></label>`}</div>
+        <p>${esc(k.desc)}</p><div class="skuf"><small>${k.term?`Minimum term ${esc(k.term)}`:""}</small><button class="act" data-unlink="${plat?"plat":"opr"}:${x.id}">Remove</button></div></div>`}).join("")}</div>
+      <button class="btn ghost" data-addlink="${plat?"plat":"opr"}" style="margin-top:10px">${list.length?"Add another":"Add a"} ${plat?"platform":"operator"} connection</button></div>`};
   $("o-body").innerHTML=cats.map(cat=>{const items=DATA.EQUIP.filter(k=>k.cat===cat).map(k=>({k,a:skuAvailable(k)})).filter(x=>x.a.show);if(!items.length)return"";
+    if(/platform connection|operator connection/i.test(cat))return linkPanel(cat);
     return `<div class="section"><h3>${esc(cat)}</h3>${/cloud sbc/i.test(cat)?regionPanel:""}<div class="skus">${items.map(({k,a})=>`<div class="sku${a.ok?"":" off"}${S.addons[k.code]?" on":""}" data-card="${k.code}">
       <div class="skuh"><div><b>${esc(k.name)}</b><code>${esc(k.code)}</code></div><div class="skup"><b>${money(k.price)}</b><small>${esc(k.uom)} · ${esc(k.charge)}</small></div></div>
       <p>${esc(k.desc)}</p>
@@ -858,6 +887,14 @@ function stepAddons(){
     i.onchange=()=>{i.value=S.addons[i.dataset.sku]||0}});
   $("o-body").querySelectorAll("[data-region]").forEach(i=>i.oninput=()=>{S.regions[i.dataset.region]=Math.max(0,Math.floor(+i.value||0));draw()});
   $("o-body").querySelectorAll("[data-fill]").forEach(b=>b.onclick=()=>{const i=$("a-"+b.dataset.fill);i.value=b.dataset.v;i.oninput()});
+  const L=ensureLinks();
+  $("o-body").querySelectorAll("[data-addlink]").forEach(b=>b.onclick=()=>{const t=b.dataset.addlink;
+    if(t==="plat"){const skus=DATA.EQUIP.filter(isPlatSku),used=L.plat.map(x=>x.code),mine=skus.find(k=>PLATFORM_FOR[S.sol]&&PLATFORM_FOR[S.sol].test(k.name));
+      const k=(mine&&!used.includes(mine.code)?mine:skus.find(k=>!used.includes(k.code)))||skus[0];L.plat.push({id:newId("pl"),code:k.code})}
+    else{const k=DATA.EQUIP.find(isOprSku);L.opr.push({id:newId("op"),code:k.code,operator:"",iso:""})}
+    const y=window.scrollY;stepAddons();update();window.scrollTo(0,y)});
+  $("o-body").querySelectorAll("[data-unlink]").forEach(b=>b.onclick=()=>{const [t,id]=b.dataset.unlink.split(":");L[t]=L[t].filter(x=>x.id!==id);const y=window.scrollY;stepAddons();update();window.scrollTo(0,y)});
+  $("o-body").querySelectorAll("[data-link]").forEach(i=>i.oninput=i.onchange=()=>{const x=L[i.dataset.link].find(v=>v.id===i.dataset.id);x[i.dataset.k]=i.value;if(i.dataset.k==="code")draw()});
   draw();
 }
 // ---- Delivery team: Day 1 professional services and Day 2 support (from the Delivery Team sheet) ----
@@ -988,6 +1025,86 @@ function stepQuote(){
     <p class="fine">Call usage is charged per minute at the domestic and international (A to Z) rates shown on the summary step. Prices in USD, excluding taxes. Minimum terms apply as listed for each item. Prepared by ${esc(c.owner||"your account manager")}.</p>`;
   keyBtn("dlx",downloadQuote);
 }
+// ---- Order enrichment: where to ship physical equipment, and which entity receives it ----
+// Equipment ships when the SKU sheet's "Ships to site" column says Yes; without that column, hardware SKUs (code contains -HW-) ship.
+function EMPTY_SHIP(){return {locs:[],alloc:{}}}
+const shipsToSite=k=>k.ships!=null?k.ships:/-HW-/i.test(k.code);
+const shipItems=()=>addonTotals().lines.filter(l=>shipsToSite(l.k));
+const shipQty=(code,id)=>+((S.ship.alloc[code]||{})[id]||0);
+const shipAllocated=code=>S.ship.locs.reduce((t,l)=>t+shipQty(code,l.id),0);
+// Entities to choose from: the company itself and every local entity from the Company and contact step.
+function entityOptions(){const c=S.cust,o=[{v:"hq",label:`${c.company||"Company"} (headquarters${c.hq?", "+c.hq:""})`}];
+  Object.entries(c.entities||{}).forEach(([iso,e])=>{if(e&&e.name&&e.name.trim())o.push({v:"local:"+iso,label:`${e.name} (${(country(iso)||{}).name||iso})`})});
+  o.push({v:"other",label:"Another entity…"});return o}
+function shipEntity(l){if(l.entity==="other")return l.entityOther||"";if(/^local:/.test(l.entity||"")){const e=S.cust.entities[l.entity.slice(6)];return e&&e.name||""}return S.cust.company||""}
+const defaultEntity=iso=>S.cust.entities[iso]&&S.cust.entities[iso].name&&S.cust.entities[iso].name.trim()?"local:"+iso:"hq";
+function newLoc(){const n=S.ship.locs.length+1,iso=[...picked][S.ship.locs.length]||[...picked][0]||"";
+  return {id:newId("l"),name:n===1?"Main site":`Site ${n}`,iso,addr1:"",addr2:"",city:"",postcode:"",contact:"",phone:"",email:"",date:"",notes:"",entity:defaultEntity(iso),entityOther:""}}
+function locIssues(l){const o=[];
+  if(!l.iso)o.push("choose the country");if(!l.addr1.trim())o.push("enter the street address");if(!l.city.trim())o.push("enter the city");
+  if(!l.contact.trim())o.push("name someone to receive the delivery");if(!l.phone.trim()&&!emailOk(l.email))o.push("add a phone number or valid email for the contact");
+  if(l.email&&!emailOk(l.email))o.push("fix the contact email");if(l.entity==="other"&&!l.entityOther.trim())o.push("name the receiving entity");
+  return o}
+function shipIssues(){
+  const items=shipItems();if(!items.length)return [];
+  const o=[];if(!S.ship.locs.length)return ["Add at least one delivery location."];
+  items.forEach(({k,q})=>{const a=shipAllocated(k.code);if(a!==q)o.push(`${k.name}: ${int(a)} of ${int(q)} assigned to a location.`)});
+  S.ship.locs.forEach(l=>{const used=items.some(({k})=>shipQty(k.code,l.id)>0),li=locIssues(l);if(used&&li.length)o.push(`${l.name||"A location"}: ${li.join(", ")}.`)});
+  return o}
+function stepShip(){
+  S.ship=S.ship||EMPTY_SHIP();
+  const items=shipItems(),c=S.cust;
+  $("o-title").textContent="Where should the equipment go?";
+  if(!items.length){
+    $("o-lede").textContent="Nothing in this order needs shipping, so there's nothing to add here.";
+    $("o-body").innerHTML=`<div class="todo">This order has no physical equipment such as ATAs or on-premises SBCs. Hosted services like Cloud SBC don't need a delivery address. To add equipment, go back to the equipment step.</div>`;
+    return}
+  $("o-lede").textContent="For each piece of equipment, say where it's delivered and which legal entity receives it. The receiving entity is usually the local entity in the delivery country, which also handles import.";
+  if(!S.ship.locs.length){S.ship.locs.push(newLoc());const l=S.ship.locs[0];items.forEach(({k,q})=>{S.ship.alloc[k.code]={[l.id]:q}})}
+  const countries=[...new Set([...picked,...DATA.COUNTRIES.map(x=>x.iso)])];
+  const fld=(l,k,label,attrs="",type="text",wide=false)=>`<label class="fld${wide?" wide":""}"><span>${label}</span><input type="${type}" data-l="${l.id}" data-k="${k}" value="${esc(l[k])}" ${attrs}></label>`;
+  const card=l=>{const ents=entityOptions();if(!ents.some(e=>e.v===l.entity))l.entity="hq";
+    return `<div class="conn" data-card="${l.id}"><div class="connh"><input class="cname" data-l="${l.id}" data-k="name" value="${esc(l.name)}" aria-label="Location name"><span class="pill">Delivery location</span>${S.ship.locs.length>1?`<button class="act" data-ldel="${l.id}">Remove</button>`:""}</div>
+      <div class="form">
+        <label class="fld"><span>Country *</span><select data-l="${l.id}" data-k="iso"><option value="">Choose</option>${countries.map(i=>`<option value="${i}"${l.iso===i?" selected":""}>${esc(country(i).name)}</option>`).join("")}</select></label>
+        <label class="fld"><span>Receiving entity *</span><select data-l="${l.id}" data-k="entity">${ents.map(e=>`<option value="${esc(e.v)}"${l.entity===e.v?" selected":""}>${esc(e.label)}</option>`).join("")}</select></label>
+        ${l.entity==="other"?fld(l,"entityOther","Entity name *","placeholder=\"Registered name of the receiving entity\""):""}
+        ${fld(l,"addr1","Street address *","autocomplete=\"address-line1\"","text",true)}
+        ${fld(l,"addr2","Building, floor or room","autocomplete=\"address-line2\"")}${fld(l,"city","City *","autocomplete=\"address-level2\"")}${fld(l,"postcode","Postal code","autocomplete=\"postal-code\"")}
+        ${fld(l,"contact","Receiving contact *","autocomplete=\"name\"")}${fld(l,"phone","Contact phone","autocomplete=\"tel\"","tel")}${fld(l,"email","Contact email","autocomplete=\"email\"","email")}
+        ${fld(l,"date","Requested delivery date","","date")}
+        <label class="fld wide"><span>Delivery notes</span><textarea rows="2" data-l="${l.id}" data-k="notes" placeholder="Loading dock, access hours, security check-in">${esc(l.notes)}</textarea></label>
+      </div><div class="ciss" id="liss-${l.id}"></div></div>`};
+  $("o-body").innerHTML=`
+    <div class="section"><h3>Delivery locations</h3><p class="fine">Add one location per address that receives equipment. Entities come from the Company and contact step; add a local entity there to see it here.</p>
+      <div class="conns" id="locs">${S.ship.locs.map(card).join("")}</div>
+      <button class="btn ghost" id="addloc">Add a delivery location</button></div>
+    <div class="section"><h3>Equipment to ship</h3><p class="fine">Split each item across the locations. The numbers in each row must add up to the quantity ordered.</p>
+      <div class="tbl"><table class="qty" id="shipt"></table></div></div>
+    <div class="section"><div class="todo" id="shipmiss"></div></div>`;
+  const drawTable=()=>{
+    $("shipt").innerHTML=`<thead><tr><th>Equipment</th><th>Ordered</th>${S.ship.locs.map(l=>`<th>${esc(l.name||"Location")}<small>${esc(shipEntity(l))}</small></th>`).join("")}<th>Assigned</th></tr></thead><tbody>
+      ${items.map(({k,q})=>{const a=shipAllocated(k.code);return `<tr><td><b>${esc(k.name)}</b><small>${esc(k.code)}</small></td><td>${int(q)}</td>
+        ${S.ship.locs.map(l=>`<td><input type="number" min="0" data-sku="${k.code}" data-loc="${l.id}" value="${shipQty(k.code,l.id)}" aria-label="${esc(k.name)} to ${esc(l.name)}"></td>`).join("")}
+        <td class="${a===q?"okline":"blk"}">${int(a)} of ${int(q)}</td></tr>`}).join("")}</tbody>`;
+    $("shipt").querySelectorAll("input[data-sku]").forEach(i=>i.oninput=()=>{(S.ship.alloc[i.dataset.sku]=S.ship.alloc[i.dataset.sku]||{})[i.dataset.loc]=Math.max(0,Math.floor(+i.value||0));refresh(true)})};
+  const refresh=keepTable=>{
+    if(!keepTable)drawTable();
+    else{$("shipt").querySelectorAll("thead th").forEach((th,i)=>{const l=S.ship.locs[i-2];if(l)th.innerHTML=`${esc(l.name||"Location")}<small>${esc(shipEntity(l))}</small>`})}
+    if(keepTable)$("shipt").querySelectorAll("tbody tr").forEach((tr,ri)=>{const {k,q}=items[ri],a=shipAllocated(k.code),td=tr.lastElementChild;td.textContent=`${int(a)} of ${int(q)}`;td.className=a===q?"okline":"blk"});
+    S.ship.locs.forEach(l=>{const box=$("liss-"+l.id);if(box){const used=items.some(({k})=>shipQty(k.code,l.id)>0);box.innerHTML=used?locIssues(l).map(x=>`<span>${esc(x[0].toUpperCase()+x.slice(1))}.</span>`).join(""):(`<span>No equipment assigned to this location yet.</span>`)}});
+    const m=shipIssues();$("shipmiss").className=m.length?"todo":"todo okline";$("shipmiss").innerHTML=m.length?`<b>Still needed</b><ul>${m.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`:"Every item has a delivery location and a receiving entity.";
+    update()};
+  const bind=()=>{
+    $("locs").querySelectorAll("[data-l]").forEach(i=>i[i.tagName==="SELECT"?"onchange":"oninput"]=e=>{const l=S.ship.locs.find(x=>x.id===i.dataset.l);const k=i.dataset.k;l[k]=i.value;
+      if(k==="iso"&&e.type==="change"&&(l.entity==="hq"||/^local:/.test(l.entity)))l.entity=defaultEntity(l.iso);
+      if((k==="entity"||k==="iso")&&e.type==="change"){redraw();return}
+      refresh(k!=="name")});
+    $("locs").querySelectorAll("[data-ldel]").forEach(b=>b.onclick=()=>{const id=b.dataset.ldel;S.ship.locs=S.ship.locs.filter(x=>x.id!==id);Object.values(S.ship.alloc).forEach(a=>delete a[id]);redraw()})};
+  const redraw=()=>{$("locs").innerHTML=S.ship.locs.map(card).join("");bind();refresh()};
+  $("addloc").onclick=()=>{S.ship.locs.push(newLoc());redraw();const cards=$("locs").querySelectorAll(".conn");cards[cards.length-1].scrollIntoView({block:"nearest"})};
+  bind();refresh();
+}
 // ---- Excel quotation (SheetJS) ----
 // Summary tab totals are formulas pointing at the detail tabs, and each summary row links to its tab.
 function xlSheet(rows,widths){
@@ -1025,7 +1142,7 @@ function buildWorkbook(){
   const s=sol(),P=plans(),R=price(),A=addonTotals(),c=S.cust,term=+c.term||36,hasPlan=R.hasPlan;
   const wb=XLSX.utils.book_new(),today=new Date().toISOString().slice(0,10),valid=new Date(Date.now()+30*864e5).toISOString().slice(0,10);
   const planTab=hasPlan?`${P.names[S.plan]} Plan`.slice(0,31):null;
-  const T={plan:planTab,voice:"Domestic Voice (GSIP)",equip:"AudioCodes SBC and ATA",ps:"Professional Services",route:"Connectors and Routing",cust:"Customer and Countries",dom:"Domestic Rates",az:"International AtoZ Rates"};
+  const T={plan:planTab,voice:"Domestic Voice (GSIP)",equip:"AudioCodes SBC and ATA",ps:"Professional Services",route:"Connectors and Routing",cust:"Customer and Countries",ship:"Shipping and Entities",dom:"Domestic Rates",az:"International AtoZ Rates"};
   const tabs=[];
 
   // Plan tab
@@ -1100,6 +1217,15 @@ function buildWorkbook(){
     ["Countries"],H(["Country","Local entity","Service address","Numbers","Channels","Users","Sites","Porting","Restrictions"])];
    R.rows.forEach(r=>{const e=c.entities[r.c.iso]||{};rows.push([r.c.name,e.name||c.company,e.addr||"",r.q.numbers,r.q.channels,r.q.users,r.q.sites,r.c.port,r.c.restr])});
    tabs.push([T.cust,xlSheet(rows,[26,30,34,10,10,10,8,40,60])]);}
+  // Shipping and entities (order enrichment, no charge)
+  {const items=shipItems(),locs=S.ship.locs,rows=[["Shipping and entities"],["Where each piece of equipment is delivered and which legal entity receives and owns it. Configuration only: nothing on this tab is charged."],[]];
+   if(!items.length)rows.push(["No equipment in this order needs shipping."]);
+   else{rows.push(["Delivery locations"],H(["Location","Receiving entity","Country","Address","City","Postal code","Contact","Phone","Email","Requested delivery","Delivery notes"]));
+     locs.forEach(l=>rows.push([l.name||"(unnamed)",shipEntity(l),l.iso?country(l.iso)?.name||l.iso:"",[l.addr1,l.addr2].filter(Boolean).join(", "),l.city,l.postcode,l.contact,l.phone,l.email,l.date,l.notes]));
+     rows.push([],["Equipment by location"],H(["SKU code","Equipment","Location","Receiving entity","Quantity"]));
+     items.forEach(({k})=>locs.forEach(l=>{const q=shipQty(k.code,l.id);if(q)rows.push([k.code,k.name,l.name||"(unnamed)",shipEntity(l),q])}));
+     const iss=shipIssues();if(iss.length)rows.push([],["Still to complete"],...iss.map(x=>[x]))}
+   tabs.push([T.ship,xlSheet(rows,[30,30,18,40,16,12,22,16,26,16,36])]);}
   // Rate tabs
   tabs.push([T.dom,xlSheet([["Domestic termination rates, USD per minute"],[],H(["Country","Fixed","Mobile","Special"]),...R.rows.map(r=>[r.c.name,...(r.c.dom?[$r(r.c.dom.fixed),$r(r.c.dom.mobile),$r(r.c.dom.special)]:["no rate"])])],[24,12,12,12])]);
   tabs.push([T.az,xlSheet([["International termination rates (A to Z), USD per minute"],[],H(["Country","Destination","Prefix","Rate per minute","Increment","Route type"]),...DATA.AZ.map(a=>[a.country,a.dest,a.prefix,$r(a.rate),a.inc,a.route])],[24,26,10,14,10,14])]);
@@ -1119,7 +1245,7 @@ function buildWorkbook(){
   rows.push(["Total","","",$m(0,`SUM(D${h+1}:D${last})`),$m(0,`SUM(E${h+1}:E${last})`),$m(0,`SUM(F${h+1}:F${last})`)]);
   rows.push([`Total contract value over ${term} months`,"","",$m(0,`D${tr}*B9+E${tr}+F${tr}*B9/12`)]);
   rows.push([],["Key figures"],["Countries",picked.size],["Users",$n(R.t.users)],["Sites",$n(R.t.sites)],["Numbers",$n(R.t.numbers)],["Channels",$n(R.t.channels)],[],
-    ["Call usage is billed per minute on top:",link(T.dom,T.dom),link(T.az,T.az)],["Customer details and local entities:",link(T.cust,T.cust)],["Connectors, PoPs and clusters:",link(T.route,T.route)]);
+    ["Call usage is billed per minute on top:",link(T.dom,T.dom),link(T.az,T.az)],["Customer details and local entities:",link(T.cust,T.cust)],["Equipment shipping and receiving entities:",link(T.ship,T.ship)],["Connectors, PoPs and clusters:",link(T.route,T.route)]);
   XLSX.utils.book_append_sheet(wb,xlSheet(rows,[40,28,12,16,16,14]),"Summary");
   tabs.forEach(([n,ws])=>XLSX.utils.book_append_sheet(wb,ws,n));
   evalWB(wb);
@@ -1211,6 +1337,7 @@ function canNext(){
   if(S.step===3){const t=totals();return t.numbers+t.channels>0}
   if(S.step===6)return !!routingOk();
   if(S.step===8)return !custMissing().length;
+  if(S.step===10)return !shipIssues().length;
   return true;
 }
 function update(){
@@ -1227,7 +1354,7 @@ function next(){
 }
 function back(){if(S.step>0){S.step--;$("msg").hidden=true;renderStep()}}
 keyBtn("next",next);keyBtn("back",back);
-function newOrder(){Object.assign(S,{step:0,sol:null,variant:null,plan:null,qty:{},addons:{},team:{},sdm:{},cust:EMPTY_CUST(),regions:{},conn:{},connectors:[],clusters:[]});picked.clear();editing=null;$("msg").hidden=true;renderStep()}
+function newOrder(){Object.assign(S,{step:0,sol:null,variant:null,plan:null,qty:{},addons:{},team:{},sdm:{},cust:EMPTY_CUST(),regions:{},conn:{},connectors:[],clusters:[],ship:EMPTY_SHIP(),links:null});picked.clear();editing=null;$("msg").hidden=true;renderStep()}
 
 // ================= Dashboard =================
 const VN={gsip:"GSIP",ms:"Microsoft",cisco:"Cisco",zoom:"Zoom"};
@@ -1261,7 +1388,7 @@ function renderDash(mode){
     o.map(x=>`<tr><td class="ref">${x.ref}</td><td>${VN[x.sol]}</td><td>${x.countries.join(", ")}</td><td>${OSTAGES[x.stage]}</td><td>${x.placed}</td><td><span class="pill ${pillCls(x.status)}">${x.status}</span></td><td><button class="act" data-o="${x.ref}" aria-expanded="false">Track</button></td></tr>
     <tr class="trk" id="trk-${x.ref}" hidden><td colspan="7"><div class="steps">${OSTAGES.map((s,i)=>`<span class="${i<x.stage||x.status==="Live"?"d":i===x.stage?(x.block?"b":"c"):""}">${s}</span>`).join("")}</div>${x.block?`<div class="blk">Waiting on you: ${x.block}</div>`:""}</td></tr>`).join("")}</tbody></table>`;
   document.querySelectorAll("[data-q]").forEach(b=>b.onclick=()=>{const x=allQuotes().find(r=>r.ref===b.dataset.q);
-    Object.assign(S,{sol:x.sol,variant:x.variant,plan:x.plan,qty:JSON.parse(JSON.stringify(x.qty||{})),addons:{...(x.addons||{})},team:{...(x.team||{})},sdm:{...(x.sdm||{})},cust:{...EMPTY_CUST(),...(x.cust||{})},regions:{...(x.regions||{})},conn:{...(x.conn||{})},connectors:JSON.parse(JSON.stringify(x.connectors||[])),clusters:JSON.parse(JSON.stringify(x.clusters||[])),step:Math.min(!x.v4&&x.step>=6?x.step+1:x.step,LAST_BUILT)});
+    Object.assign(S,{sol:x.sol,variant:x.variant,plan:x.plan,qty:JSON.parse(JSON.stringify(x.qty||{})),addons:{...(x.addons||{})},team:{...(x.team||{})},sdm:{...(x.sdm||{})},cust:{...EMPTY_CUST(),...(x.cust||{})},regions:{...(x.regions||{})},conn:{...(x.conn||{})},connectors:JSON.parse(JSON.stringify(x.connectors||[])),clusters:JSON.parse(JSON.stringify(x.clusters||[])),ship:{...EMPTY_SHIP(),...JSON.parse(JSON.stringify(x.ship||{}))},links:x.links?JSON.parse(JSON.stringify(x.links)):null,step:Math.min(!x.v4&&x.step>=6?x.step+1:x.step,LAST_BUILT)});
     picked.clear();x.countries.forEach(c=>{if(!DATA||DATA.COUNTRIES.some(k=>k.iso===c))picked.add(c)});editing=x.ex||x.status==="Expired"?null:x.ref;
     location.hash="order";renderStep();
     $("msg").hidden=x.step<=LAST_BUILT;$("msg").textContent=`Reopened ${x.ref} at the ${STEPS[S.step][0].toLowerCase()} step. Later steps aren't built yet.`});
@@ -1272,7 +1399,7 @@ function saveQuote(){
   const a=loadSaved(), today=new Date().toISOString().slice(0,10);
   let rec=editing&&a.find(r=>r.ref===editing);
   if(!rec){rec={ref:"Q-"+(10500+a.length+1),status:"Draft"};a.unshift(rec);editing=rec.ref}
-  Object.assign(rec,{sol:S.sol,variant:S.variant,plan:S.plan,countries:[...picked],qty:S.qty,addons:S.addons,team:S.team,sdm:S.sdm,cust:S.cust,regions:S.regions,conn:S.conn,connectors:S.connectors,clusters:S.clusters,v4:true,step:S.step,updated:today});
+  Object.assign(rec,{sol:S.sol,variant:S.variant,plan:S.plan,countries:[...picked],qty:S.qty,addons:S.addons,team:S.team,sdm:S.sdm,cust:S.cust,regions:S.regions,conn:S.conn,connectors:S.connectors,clusters:S.clusters,ship:S.ship,links:S.links,v4:true,step:S.step,updated:today});
   storeSaved(a);$("msg").hidden=false;$("msg").textContent=`Saved as ${rec.ref}. Find it under My quotes to pick it up later.`;
 }
 keyBtn("save",saveQuote);
